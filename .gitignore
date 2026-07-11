@@ -36,3 +36,6 @@ __pycache__/
 .venv/
 env/
 .ruff_cache/
+
+# Standalone HTML marketing pages
+opencomputer.html
