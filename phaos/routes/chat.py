@@ -66,6 +66,28 @@ async def _stream_chat(req: ChatRequest):
     for m in req.messages:
         messages.append({"role": m.role, "content": m.content})
 
+    # Auto-scan workspace root on first message so the LLM knows the project structure
+    if len(req.messages) <= 1:
+        try:
+            import os
+            workspace = os.getenv("PHAOS_WORKSPACE", os.getcwd())
+            entries = []
+            for name in sorted(os.listdir(workspace)):
+                full = os.path.join(workspace, name)
+                if os.path.isdir(full):
+                    entries.append(f"  {name}/")
+                else:
+                    size = os.path.getsize(full)
+                    entries.append(f"  {name} ({size} bytes)")
+            if entries:
+                scan_text = "\n".join(entries)
+                messages.append({
+                    "role": "system",
+                    "content": f"[Auto-scan: workspace root '{workspace}']\n{scan_text}",
+                })
+        except Exception:
+            pass
+
     base_url = req.provider.get("baseUrl", "").rstrip("/")
     api_key = req.provider.get("apiKey", "")
     model = req.provider.get("model", "gpt-4o-mini")
