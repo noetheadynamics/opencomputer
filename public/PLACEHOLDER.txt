@@ -1,0 +1,6 @@
+Drop the OpenComputer brand assets here:
+  opencomputer-icon.png   (mark only, no wordmark -> Tauri app icon + sidebar/header mark)
+  opencomputer-logo.png   (mark + 'OpenComputer' wordmark -> header logo)
+  opencomputer-transparent.png (gradient bg + wordmark -> about/splash)
+
+Then regenerate the Tauri icons with:  npx tauri icon opencomputer-icon.png

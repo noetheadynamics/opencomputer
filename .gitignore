@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri
+*.app
+*.dmg
+*.AppImage
+*.exe
+
+# Logs
+*.log
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Python
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+env/
+.ruff_cache/
