@@ -35,6 +35,7 @@ import {
   saveTheme,
   type Provider,
 } from "@/lib/providers";
+import { DEFAULT_SYSTEM_PROMPT } from "@/types/conversation";
 
 export default function App() {
   const [view, setView] = React.useState<ViewKey>("chat");
@@ -44,9 +45,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [ready, setReady] = React.useState(false);
   const [projectRoot, setProjectRoot] = React.useState("/OpenComputer");
-  const [systemPrompt, setSystemPrompt] = React.useState(
-    "You are a helpful AI assistant with access to tools. Use them when appropriate.",
-  );
+  const [systemPrompt, setSystemPrompt] = React.useState(DEFAULT_SYSTEM_PROMPT);
   const [sessionId] = React.useState(() => crypto.randomUUID());
 
   React.useEffect(() => {
@@ -160,6 +159,7 @@ export default function App() {
                   <ChatView
                     provider={activeProvider}
                     onOpenSettings={() => setSettingsOpen(true)}
+                    systemPrompt={systemPrompt}
                   />
                 )}
                 {view === "files" && (

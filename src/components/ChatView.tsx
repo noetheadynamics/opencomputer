@@ -36,6 +36,7 @@ import { LongPressMenu } from "./chat/LongPressMenu";
 interface ChatViewProps {
   provider: Provider | null;
   onOpenSettings: () => void;
+  systemPrompt?: string;
 }
 
 interface UIMessage {
@@ -75,7 +76,7 @@ const tapSpring = {
   mass: 0.4,
 };
 
-export function ChatView({ provider, onOpenSettings }: ChatViewProps) {
+export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewProps) {
   const [messages, setMessages] = React.useState<UIMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -285,7 +286,7 @@ export function ChatView({ provider, onOpenSettings }: ChatViewProps) {
             ),
           ),
       },
-      "You are a helpful AI assistant with access to tools. Use them when appropriate.",
+      systemPrompt || "You are a helpful AI assistant with access to tools. Use them when appropriate.",
     );
     setBusy(false);
   }, [input, provider, busy, messages, attachments, replyTo]);
