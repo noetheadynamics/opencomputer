@@ -241,6 +241,38 @@ class SandboxedExecutor:
             ),
             self._exec_search_workspace,
         )
+        self.registry.register(
+            ToolDefinition(
+                name="web_fetch",
+                description="Fetch content from a URL. Returns the text content of the page.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "The URL to fetch"},
+                    },
+                    "required": ["url"],
+                },
+                risk_level="medium",
+                sandbox_required=False,
+            ),
+            self._exec_web_fetch,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="web_search",
+                description="Search the internet for information. Returns search results with titles, URLs, and snippets.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query"},
+                    },
+                    "required": ["query"],
+                },
+                risk_level="medium",
+                sandbox_required=False,
+            ),
+            self._exec_web_search,
+        )
         self._register_compact_tools()
     
     def _exec_terminal(self, args: dict) -> Any:
@@ -395,6 +427,63 @@ class SandboxedExecutor:
                     if len(matches) >= 50:
                         return {"pattern": pattern, "matches": matches, "truncated": True}
         return {"pattern": pattern, "matches": matches}
+
+    def _exec_web_fetch(self, args: dict) -> dict:
+        import httpx
+        url = args.get("url", "")
+        if not url:
+            return {"error": "No URL provided"}
+        try:
+            with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+                resp = client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; OpenComputer/1.0)"})
+                if resp.status_code != 200:
+                    return {"error": f"HTTP {resp.status_code}", "url": url}
+                content_type = resp.headers.get("content-type", "")
+                text = resp.text
+                # For HTML, strip tags to get readable text
+                if "html" in content_type:
+                    import re
+                    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
+                    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
+                    text = re.sub(r'<[^>]+>', ' ', text)
+                    text = re.sub(r'\s+', ' ', text).strip()
+                # Truncate to reasonable size
+                if len(text) > 8000:
+                    text = text[:8000] + "\n...[truncated]"
+                return {"url": url, "status": resp.status_code, "content_type": content_type, "text": text}
+        except Exception as e:
+            return {"error": str(e), "url": url}
+
+    def _exec_web_search(self, args: dict) -> dict:
+        import httpx, re, html
+        query = args.get("query", "")
+        if not query:
+            return {"error": "No query provided"}
+        try:
+            # Use DuckDuckGo HTML search (no API key needed)
+            with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+                resp = client.get(
+                    "https://html.duckduckgo.com/html/",
+                    params={"q": query},
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                )
+                if resp.status_code != 200:
+                    return {"error": f"Search failed: HTTP {resp.status_code}", "query": query}
+                text = resp.text
+                # Parse results from DuckDuckGo HTML
+                results = []
+                # Find result blocks
+                titles = re.findall(r'class="result__a"[^>]*>(.*?)</a>', text, re.DOTALL)
+                snippets = re.findall(r'class="result__snippet">(.*?)</[at]', text, re.DOTALL)
+                urls = re.findall(r'class="result__url"[^>]*>(.*?)</a>', text, re.DOTALL)
+                for i in range(min(len(titles), 10)):
+                    title = html.unescape(re.sub(r'<[^>]+>', '', titles[i]).strip())
+                    snippet = html.unescape(re.sub(r'<[^>]+>', '', snippets[i]).strip()) if i < len(snippets) else ""
+                    url = html.unescape(re.sub(r'<[^>]+>', '', urls[i]).strip()) if i < len(urls) else ""
+                    results.append({"title": title, "url": url, "snippet": snippet})
+                return {"query": query, "results": results}
+        except Exception as e:
+            return {"error": str(e), "query": query}
 
     def _register_compact_tools(self):
         """Register DCP compaction tools: compact, discard, protect, prune."""
