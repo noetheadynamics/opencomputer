@@ -4,15 +4,16 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Layers, Database, BarChart3, Download, Search } from 'lucide-react';
+import { Shield, Layers, Database, BarChart3, Download, Search, Trash2 } from 'lucide-react';
 import { TruthVaultViewer } from './TruthVaultViewer';
 import { CrossSessionStateViewer } from './CrossSessionStateViewer';
 import { MemoryStoreViewer } from './MemoryStoreViewer';
 import { MemoryStats } from './MemoryStats';
 import { FullMemoryExport } from './FullMemoryExport';
+import { MemoryCleanup } from './MemoryCleanup';
 import { useMemory } from '../../hooks/useMemory';
 
-type MemoryTab = 'truth-vault' | 'cross-session' | 'memory-store' | 'stats' | 'export' | 'search';
+type MemoryTab = 'truth-vault' | 'cross-session' | 'memory-store' | 'stats' | 'export' | 'search' | 'cleanup';
 
 const TABS: { id: MemoryTab; label: string; icon: React.ReactNode }[] = [
   { id: 'truth-vault', label: 'Truth Vault', icon: <Shield className="w-4 h-4" /> },
@@ -21,6 +22,7 @@ const TABS: { id: MemoryTab; label: string; icon: React.ReactNode }[] = [
   { id: 'stats', label: 'Stats', icon: <BarChart3 className="w-4 h-4" /> },
   { id: 'export', label: 'Export', icon: <Download className="w-4 h-4" /> },
   { id: 'search', label: 'Search All', icon: <Search className="w-4 h-4" /> },
+  { id: 'cleanup', label: 'Cleanup', icon: <Trash2 className="w-4 h-4" /> },
 ];
 
 export const MemoryPanel: React.FC = () => {
@@ -46,6 +48,8 @@ export const MemoryPanel: React.FC = () => {
         return <MemoryStats />;
       case 'export':
         return <FullMemoryExport />;
+      case 'cleanup':
+        return <MemoryCleanup />;
       case 'search':
         return (
           <div className="oc-glass-panel p-6 space-y-4">

@@ -1,4 +1,8 @@
 import * as React from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import "@xterm/xterm/css/xterm.css";
 
 interface TerminalEmulatorProps {
   onExecute: (command: string) => void;
@@ -7,75 +11,114 @@ interface TerminalEmulatorProps {
 
 export function TerminalEmulator({ onExecute, outputLines }: TerminalEmulatorProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const [inputValue, setInputValue] = React.useState("");
-  const [commandHistory, setCommandHistory] = React.useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = React.useState(-1);
+  const termInstance = React.useRef<Terminal | null>(null);
+  const fitAddon = React.useRef<FitAddon | null>(null);
+  const commandBuffer = React.useRef("");
+  const [ready, setReady] = React.useState(false);
 
+  // Initialize xterm
   React.useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [outputLines]);
+    if (!containerRef.current || termInstance.current) return;
 
-  const handleContainerClick = () => {
-    inputRef.current?.focus();
-  };
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
+      theme: {
+        background: "#050605",
+        foreground: "#E8EDED",
+        cursor: "#34D399",
+        cursorAccent: "#050605",
+        selectionBackground: "rgba(52, 211, 153, 0.2)",
+      },
+      allowProposedApi: true,
+    });
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && inputValue.trim()) {
-      onExecute(inputValue.trim());
-      setCommandHistory((prev) => [...prev, inputValue.trim()]);
-      setHistoryIndex(-1);
-      setInputValue("");
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      if (commandHistory.length > 0) {
-        const newIndex = historyIndex === -1
-          ? commandHistory.length - 1
-          : Math.max(0, historyIndex - 1);
-        setHistoryIndex(newIndex);
-        setInputValue(commandHistory[newIndex]);
-      }
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (historyIndex !== -1) {
-        const newIndex = historyIndex + 1;
-        if (newIndex >= commandHistory.length) {
-          setHistoryIndex(-1);
-          setInputValue("");
-        } else {
-          setHistoryIndex(newIndex);
-          setInputValue(commandHistory[newIndex]);
+    const fit = new FitAddon();
+    const links = new WebLinksAddon();
+    term.loadAddon(fit);
+    term.loadAddon(links);
+
+    term.open(containerRef.current);
+    fit.fit();
+
+    termInstance.current = term;
+    fitAddon.current = fit;
+
+    // Welcome message
+    term.writeln("\x1b[1;36m  OpenComputer Terminal\x1b[0m");
+    term.writeln("\x1b[90m  Type commands below. History: ↑↓\x1b[0m");
+    term.writeln("");
+    term.write("\x1b[1;32m❯\x1b[0m ");
+
+    // Handle input
+    term.onData((data) => {
+      if (data === "\r") {
+        // Enter
+        const cmd = commandBuffer.current.trim();
+        term.writeln("");
+        if (cmd) {
+          onExecute(cmd);
         }
+        commandBuffer.current = "";
+        term.write("\x1b[1;32m❯\x1b[0m ");
+      } else if (data === "\x7f") {
+        // Backspace
+        if (commandBuffer.current.length > 0) {
+          commandBuffer.current = commandBuffer.current.slice(0, -1);
+          term.write("\b \b");
+        }
+      } else if (data === "\x1b[A") {
+        // Arrow up — skip for now (could add history)
+      } else if (data === "\x1b[B") {
+        // Arrow down — skip for now
+      } else if (data >= " ") {
+        // Printable character
+        commandBuffer.current += data;
+        term.write(data);
+      }
+    });
+
+    setReady(true);
+
+    // Handle resize
+    const observer = new ResizeObserver(() => {
+      fitAddon.current?.fit();
+    });
+    observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+      term.dispose();
+      termInstance.current = null;
+    };
+  }, []);
+
+  // Write output lines to terminal
+  React.useEffect(() => {
+    const term = termInstance.current;
+    if (!term || !ready) return;
+
+    // Write new lines (skip the ones already written)
+    const lastLines = outputLines.slice(-50);
+    for (const line of lastLines) {
+      if (line.startsWith("$ ")) {
+        // Command echo — already shown via input
+        continue;
+      }
+      if (line.startsWith("[error] ")) {
+        term.writeln(`\x1b[31m${line}\x1b[0m`);
+      } else if (line.startsWith("[exit code ")) {
+        term.writeln(`\x1b[33m${line}\x1b[0m`);
+      } else {
+        term.writeln(line);
       }
     }
-  };
+  }, [outputLines, ready]);
 
   return (
-    <div
-      ref={containerRef}
-      onClick={handleContainerClick}
-      className="flex h-full flex-col overflow-auto bg-oc-bg p-4 font-mono text-sm"
-    >
-      {outputLines.map((line, i) => (
-        <div key={i} className="whitespace-pre-wrap text-oc-text-primary">
-          {line}
-        </div>
-      ))}
-      <div className="mt-2 flex items-center gap-2">
-        <span className="text-oc-accent">$</span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="flex-1 bg-transparent text-oc-text-primary outline-none placeholder-oc-text-secondary/50"
-          placeholder="Type a command..."
-          autoFocus
-        />
-      </div>
+    <div className="h-full w-full bg-oc-bg p-1">
+      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 }

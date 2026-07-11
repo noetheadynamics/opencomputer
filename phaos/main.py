@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import tasks, harness, skills, cron, audit, harness_management, conversations, memory, background_tasks, compact, routing, performance, preferences, merging, search, subagents, mcp
+from .routes import tasks, harness, skills, cron, audit, harness_management, conversations, memory, background_tasks, compact, routing, performance, preferences, merging, search, subagents, mcp, chat
 from .db import init_db, init_slots, init_skills, init_harness_configs
 
 app = FastAPI(
@@ -37,6 +37,7 @@ app.include_router(merging.router, prefix="/api/merging", tags=["merging"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
 app.include_router(subagents.router, prefix="/api/subagents", tags=["subagents"])
 app.include_router(mcp.router, prefix="/api", tags=["mcp"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 
 @app.on_event("startup")

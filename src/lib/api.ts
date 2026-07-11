@@ -1,4 +1,5 @@
 import type { Provider } from "./providers";
+import { PHAOS_BASE } from "./config";
 
 export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): (...args: Parameters<T>) => void {
   let timer: ReturnType<typeof setTimeout>;
@@ -134,6 +135,107 @@ export async function streamChat(
           }
         } catch {
           // ignore partial/keepalive lines
+        }
+      }
+    }
+    handlers.onDone(full);
+  } catch (err) {
+    handlers.onError(err instanceof Error ? err.message : "Network error");
+  }
+}
+
+export interface ToolCallInfo {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface ToolResultInfo {
+  id: string;
+  name: string;
+  result: string;
+}
+
+export interface PhaosStreamHandlers {
+  onToken: (delta: string) => void;
+  onToolCall: (call: ToolCallInfo) => void;
+  onToolResult: (result: ToolResultInfo) => void;
+  onDone: (full: string) => void;
+  onError: (message: string) => void;
+}
+
+/** Stream a chat through the PHAOS backend with tool execution. */
+export async function streamPhaosChat(
+  provider: Provider,
+  messages: ChatMessage[],
+  handlers: PhaosStreamHandlers,
+  systemPrompt?: string,
+): Promise<void> {
+  try {
+    const res = await fetch(`${PHAOS_BASE}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages,
+        provider: {
+          baseUrl: provider.baseUrl,
+          apiKey: provider.apiKey,
+          model: provider.model,
+        },
+        system_prompt: systemPrompt || undefined,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      handlers.onError(`PHAOS returned ${res.status}: ${text.slice(0, 200)}`);
+      return;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      handlers.onError("No response body");
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let full = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const payload = trimmed.slice(6);
+        try {
+          const event = JSON.parse(payload);
+
+          if (event.token) {
+            full += event.token;
+            handlers.onToken(event.token);
+          }
+          if (event.tool_call) {
+            handlers.onToolCall(event.tool_call);
+          }
+          if (event.tool_result) {
+            handlers.onToolResult(event.tool_result);
+          }
+          if (event.error) {
+            handlers.onError(event.error);
+            return;
+          }
+          if (event.done) {
+            handlers.onDone(event.full_response || full);
+            return;
+          }
+        } catch {
+          // ignore partial lines
         }
       }
     }

@@ -16,6 +16,15 @@ import { SubagentManagerPanel } from "@/components/settings/SubagentManagerPanel
 import { MCPManagerPanel } from "@/components/mcp/MCPManagerPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SearchPanel } from "@/components/search/SearchPanel";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import { PerformancePanel } from "@/components/settings/PerformancePanel";
+import { RoutingPanel } from "@/components/settings/RoutingPanel";
+import { MergeStrategyPanel } from "@/components/settings/MergeStrategyPanel";
+import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel";
+import { BackgroundTaskPanel } from "@/components/background/BackgroundTaskPanel";
+import { HarnessManagerPanel } from "@/components/settings/HarnessManagerPanel";
+import { SystemPromptEditor } from "@/components/settings/SystemPromptEditor";
 import { getValue, setValue } from "@/lib/storage";
 import {
   loadProviders,
@@ -35,6 +44,10 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [ready, setReady] = React.useState(false);
   const [projectRoot, setProjectRoot] = React.useState("/OpenComputer");
+  const [systemPrompt, setSystemPrompt] = React.useState(
+    "You are a helpful AI assistant with access to tools. Use them when appropriate.",
+  );
+  const [sessionId] = React.useState(() => crypto.randomUUID());
 
   React.useEffect(() => {
     (async () => {
@@ -165,6 +178,24 @@ export default function App() {
                 {view === "memory" && <MemoryPanel />}
                 {view === "subagents" && <SubagentManagerPanel />}
                 {view === "mcp" && <MCPManagerPanel />}
+                {view === "search" && <SearchPanel />}
+                {view === "notifications" && <NotificationCenter />}
+                {view === "performance" && (
+                  <PerformancePanel sessionId={sessionId} />
+                )}
+                {view === "routing" && <RoutingPanel />}
+                {view === "merging" && <MergeStrategyPanel />}
+                {view === "shortcuts" && <ShortcutsPanel />}
+                {view === "background" && (
+                  <BackgroundTaskPanel sessionId={sessionId} />
+                )}
+                {view === "harness" && <HarnessManagerPanel />}
+                {view === "prompt" && (
+                  <SystemPromptEditor
+                    value={systemPrompt}
+                    onSave={setSystemPrompt}
+                  />
+                )}
               </div>
             </Suspense>
           </main>

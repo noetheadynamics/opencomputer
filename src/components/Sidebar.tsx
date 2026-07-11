@@ -14,6 +14,15 @@ import {
   Brain,
   Bot,
   Plug,
+  Search,
+  Bell,
+  BarChart3,
+  Route,
+  Layers,
+  Keyboard,
+  Loader,
+  Wrench,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +40,15 @@ export type ViewKey =
   | "memory"
   | "subagents"
   | "mcp"
+  | "search"
+  | "notifications"
+  | "performance"
+  | "routing"
+  | "merging"
+  | "shortcuts"
+  | "background"
+  | "harness"
+  | "prompt"
   | "settings";
 
 interface NavItem {
@@ -44,14 +62,23 @@ const NAV_ITEMS: NavItem[] = [
   { key: "files", label: "Files", icon: FolderOpen },
   { key: "terminal", label: "Terminal", icon: TerminalSquare },
   { key: "git", label: "Git", icon: GitBranch },
+  { key: "search", label: "Search", icon: Search },
   { key: "todo", label: "To-Do", icon: ListTodo },
   { key: "skills", label: "Skills", icon: Blocks },
   { key: "cron", label: "Schedule", icon: Clock },
   { key: "queue", label: "Tasks", icon: List },
+  { key: "background", label: "Background", icon: Loader },
   { key: "audit", label: "Audit", icon: Shield },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "subagents", label: "Subagents", icon: Bot },
   { key: "mcp", label: "MCP", icon: Plug },
+  { key: "notifications", label: "Notifications", icon: Bell },
+  { key: "harness", label: "Harness", icon: Wrench },
+  { key: "performance", label: "Performance", icon: BarChart3 },
+  { key: "routing", label: "Routing", icon: Route },
+  { key: "merging", label: "Merging", icon: Layers },
+  { key: "prompt", label: "Prompt", icon: FileText },
+  { key: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
