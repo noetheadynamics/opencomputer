@@ -108,7 +108,7 @@ export function Sidebar({ active, onNavigate, isDark }: SidebarProps) {
       initial={{ x: -40, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 260, damping: 28 }}
-      className="flex w-[84px] shrink-0 flex-col items-center overflow-hidden py-6"
+      className="flex h-full w-[84px] shrink-0 flex-col items-center py-6"
     >
       <div className="mb-6">
         <Logo variant="icon" className="h-10 w-10" />
