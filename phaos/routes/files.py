@@ -12,8 +12,8 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-# Workspace root — where the app stores project files
-WORKSPACE_ROOT = os.getenv("PHAOS_WORKSPACE", os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
+# Workspace root — defaults to the directory where the server was started
+WORKSPACE_ROOT = os.getenv("PHAOS_WORKSPACE", os.getcwd())
 
 
 def _safe_path(path: str) -> str:

@@ -108,8 +108,9 @@ class SandboxedExecutor:
     
     BLOCKED_NETWORK_TOOLS = {"curl", "wget", "telnet", "nc", "netcat", "ssh", "scp", "rsync"}
     
-    def __init__(self, workspace_root: str = "."):
-        self.workspace_root = workspace_root
+    def __init__(self, workspace_root: str | None = None):
+        import os
+        self.workspace_root = workspace_root or os.getenv("PHAOS_WORKSPACE", os.getcwd())
         self.registry = ToolRegistry()
         self._register_builtins()
     
