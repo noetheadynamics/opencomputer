@@ -10,6 +10,7 @@ import {
   Plus,
   MessageSquare,
   Trash2,
+  StopCircle,
 } from "lucide-react";
 import {
   streamPhaosChat,
@@ -88,6 +89,8 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [showSidebar, setShowSidebar] = React.useState(false);
+  const abortRef = React.useRef<AbortController | null>(null);
+  const queueRef = React.useRef<{ text: string; convId: string; attachments: ChatAttachment[]; replyTo: UIMessage | null }[]>([]);
 
   // Conversation persistence
   const {
@@ -293,33 +296,21 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     }
   }
 
-  const send = React.useCallback(async () => {
-    const text = input.trim();
-    if ((!text && attachments.length === 0) || !provider || busy) return;
-    setInput("");
-    setReplyTo(null);
-
-    // Auto-create conversation if none active
-    let convId = activeConvId;
-    if (!convId) {
-      try {
-        const conv = await createConversation(text.slice(0, 50));
-        convId = conv.id;
-      } catch (err) {
-        console.error("Failed to create conversation:", err);
-        return;
-      }
-    }
-
+  // Process a single message through the stream
+  const processMessage = React.useCallback(async (
+    text: string,
+    convId: string,
+    msgAttachments: ChatAttachment[],
+    msgReplyTo: UIMessage | null,
+  ) => {
     const userMsg: UIMessage = {
       id: uid(),
       role: "user",
       content: text,
-      attachments: attachments.length > 0 ? [...attachments] : undefined,
-      replyTo: replyTo?.id,
+      attachments: msgAttachments.length > 0 ? [...msgAttachments] : undefined,
+      replyTo: msgReplyTo?.id,
       timestamp: Date.now(),
     };
-    setAttachments([]);
 
     const assistantId = uid();
     const assistantMsg: UIMessage = {
@@ -332,7 +323,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     setMessages((m) => [...m, userMsg, assistantMsg]);
     setBusy(true);
 
-    // Persist user message using local convId
+    // Persist user message
     await persistMessage(convId, "user", text);
 
     const history: ChatMessage[] = [
@@ -342,8 +333,11 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
       { role: "user" as const, content: text },
     ];
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     await streamPhaosChat(
-      provider,
+      provider!,
       history,
       {
         onToken: (delta) =>
@@ -369,24 +363,80 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               msg.id === assistantId ? { ...msg, streaming: false } : msg,
             ),
           );
-          // Persist assistant response using local convId
           if (fullResponse) {
             await persistMessage(convId, "assistant", fullResponse);
           }
+          // Process queue
+          const next = queueRef.current.shift();
+          if (next) {
+            processMessage(next.text, next.convId, next.attachments, next.replyTo);
+          } else {
+            setBusy(false);
+          }
         },
-        onError: (message) =>
+        onError: (message) => {
           setMessages((m) =>
             m.map((msg) =>
               msg.id === assistantId
                 ? { ...msg, streaming: false, content: `⚠️ ${message}` }
                 : msg,
             ),
-          ),
+          );
+          // Process queue even on error
+          const next = queueRef.current.shift();
+          if (next) {
+            processMessage(next.text, next.convId, next.attachments, next.replyTo);
+          } else {
+            setBusy(false);
+          }
+        },
       },
       systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      controller.signal,
     );
+    abortRef.current = null;
+  }, [provider, messages, persistMessage, systemPrompt]);
+
+  const send = React.useCallback(async () => {
+    const text = input.trim();
+    if ((!text && attachments.length === 0) || !provider) return;
+    setInput("");
+    setReplyTo(null);
+
+    // Auto-create conversation if none active
+    let convId = activeConvId;
+    if (!convId) {
+      try {
+        const conv = await createConversation(text.slice(0, 50));
+        convId = conv.id;
+      } catch (err) {
+        console.error("Failed to create conversation:", err);
+        return;
+      }
+    }
+
+    const currentAttachments = [...attachments];
+    const currentReplyTo = replyTo;
+
+    if (busy) {
+      // Queue the message
+      queueRef.current.push({ text, convId, attachments: currentAttachments, replyTo: currentReplyTo });
+      setAttachments([]);
+      return;
+    }
+
+    setAttachments([]);
+    await processMessage(text, convId, currentAttachments, currentReplyTo);
+  }, [input, provider, busy, activeConvId, attachments, replyTo, createConversation, processMessage]);
+
+  function terminate() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    queueRef.current = [];
     setBusy(false);
-  }, [input, provider, busy, messages, attachments, replyTo, activeConvId, persistMessage, systemPrompt]);
+  }
 
   if (!provider) {
     return (
@@ -695,6 +745,13 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
 
         <FormattingToolbar onFormat={handleFormat} />
 
+        {queueRef.current.length > 0 && (
+          <div className="mb-2 flex items-center gap-2 text-xs text-oc-text-secondary">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-oc-accent" />
+            {queueRef.current.length} message{queueRef.current.length > 1 ? "s" : ""} queued
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
           <motion.button
             type="button"
@@ -730,17 +787,30 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
             className="oc-glass-input max-h-40 min-h-[42px] flex-1 resize-none px-3 py-2.5 text-sm text-oc-text-primary placeholder:text-oc-text-secondary/60 outline-none"
           />
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
-            <motion.button
-              type="button"
-              onClick={send}
-              disabled={busy || (!input.trim() && attachments.length === 0)}
-              whileHover={{ scale: 1.05, y: -2, transition: glassSpring }}
-              whileTap={{ scale: 0.9, y: 1, transition: tapSpring }}
-              className="oc-glass-btn oc-glass-btn-primary flex h-[42px] w-[42px] items-center justify-center rounded-xl disabled:opacity-40"
-              aria-label="Send"
-            >
-              <Send size={18} />
-            </motion.button>
+            {busy ? (
+              <motion.button
+                type="button"
+                onClick={terminate}
+                whileHover={{ scale: 1.05, y: -2, transition: glassSpring }}
+                whileTap={{ scale: 0.9, y: 1, transition: tapSpring }}
+                className="oc-glass-btn flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                aria-label="Stop"
+              >
+                <StopCircle size={18} />
+              </motion.button>
+            ) : (
+              <motion.button
+                type="button"
+                onClick={send}
+                disabled={!input.trim() && attachments.length === 0}
+                whileHover={{ scale: 1.05, y: -2, transition: glassSpring }}
+                whileTap={{ scale: 0.9, y: 1, transition: tapSpring }}
+                className="oc-glass-btn oc-glass-btn-primary flex h-[42px] w-[42px] items-center justify-center rounded-xl disabled:opacity-40"
+                aria-label="Send"
+              >
+                <Send size={18} />
+              </motion.button>
+            )}
           </motion.div>
         </div>
       </div>

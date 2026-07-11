@@ -170,6 +170,7 @@ export async function streamPhaosChat(
   messages: ChatMessage[],
   handlers: PhaosStreamHandlers,
   systemPrompt?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     const res = await fetch(`${PHAOS_BASE}/api/chat`, {
@@ -184,6 +185,7 @@ export async function streamPhaosChat(
         },
         system_prompt: systemPrompt || undefined,
       }),
+      signal,
     });
 
     if (!res.ok) {
@@ -241,6 +243,10 @@ export async function streamPhaosChat(
     }
     handlers.onDone(full);
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      handlers.onDone("");
+      return;
+    }
     handlers.onError(err instanceof Error ? err.message : "Network error");
   }
 }
