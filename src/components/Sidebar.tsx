@@ -113,7 +113,7 @@ export function Sidebar({ active, onNavigate, isDark }: SidebarProps) {
       <div className="mb-6">
         <Logo variant="icon" className="h-10 w-10" />
       </div>
-      <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto px-1">
+      <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.key;
@@ -131,6 +131,7 @@ export function Sidebar({ active, onNavigate, isDark }: SidebarProps) {
                 !isDark && "light-theme",
                 isActive && "active",
               )}
+              style={{ width: 52, height: 52, borderRadius: "50%" }}
             >
               <Icon
                 size={20}
