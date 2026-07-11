@@ -149,6 +149,44 @@ class Database:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS truth_vault (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                sources TEXT DEFAULT '[]',
+                confidence REAL DEFAULT 0.0,
+                ttl_hours INTEGER DEFAULT 24,
+                created_at TEXT NOT NULL,
+                expires_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS cross_session_state (
+                id TEXT PRIMARY KEY,
+                category TEXT NOT NULL,
+                content TEXT NOT NULL,
+                metadata TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS message_feedback (
+                id TEXT PRIMARY KEY,
+                message_id TEXT NOT NULL,
+                query TEXT,
+                response TEXT,
+                feedback TEXT NOT NULL,
+                correction TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                type TEXT DEFAULT 'info',
+                read INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
         """)
         self.conn.commit()
 

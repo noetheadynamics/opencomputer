@@ -1,11 +1,12 @@
-"""Memory API routes — exposes Truth Vault, Cross-Session State, Memory Store, Export, Cleanup."""
+"""Memory API routes — Truth Vault, Cross-Session State, Memory Store, Feedback (all SQLite-backed)."""
 
 from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -21,8 +22,6 @@ from ..db.conversation_store import (
 from ..db.database import get_db
 
 router = APIRouter(tags=["memory"])
-
-# ── Module-level singletons ─────────────────────────────────────────
 
 _memory_store: Optional[MemoryStore] = None
 _feedback_loop: Optional[FeedbackLoop] = None
@@ -44,55 +43,116 @@ def _get_feedback_loop() -> FeedbackLoop:
 
 # ── Truth Vault ─────────────────────────────────────────────────────
 
-# In-memory truth vault for V1 (no AV2 backend wired yet)
-_truth_vault: list[dict] = []
+
+class TruthVaultFact(BaseModel):
+    query: str
+    answer: str
+    sources: list[str] = []
+    confidence: float = 0.0
+    ttl_hours: int = 24
 
 
 @router.get("/truth-vault")
-async def get_truth_vault(limit: int = 100, fact_type: Optional[str] = None):
-    results = _truth_vault
-    if fact_type:
-        results = [f for f in results if f.get("fact_type") == fact_type]
-    return results[:limit]
+async def get_truth_vault(limit: int = 100):
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    rows = db.conn.execute(
+        "SELECT * FROM truth_vault WHERE expires_at IS NULL OR expires_at > ? ORDER BY created_at DESC LIMIT ?",
+        (now, limit),
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "query": r["query"],
+            "answer": r["answer"],
+            "sources": json.loads(r["sources"]) if r["sources"] else [],
+            "confidence": r["confidence"],
+            "ttlHours": r["ttl_hours"],
+            "createdAt": r["created_at"],
+            "expiresAt": r["expires_at"],
+        }
+        for r in rows
+    ]
+
+
+@router.post("/truth-vault")
+async def add_truth_vault_fact(req: TruthVaultFact):
+    fact_id = f"vault-{__import__('uuid').uuid4().hex[:8]}"
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(hours=req.ttl_hours)).isoformat() if req.ttl_hours > 0 else None
+    db.conn.execute(
+        "INSERT INTO truth_vault (id, query, answer, sources, confidence, ttl_hours, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (fact_id, req.query, req.answer, json.dumps(req.sources), req.confidence, req.ttl_hours, now.isoformat(), expires),
+    )
+    db.conn.commit()
+    return {"id": fact_id}
 
 
 @router.delete("/truth-vault/{fact_id}")
 async def delete_truth_vault_fact(fact_id: str):
-    global _truth_vault
-    before = len(_truth_vault)
-    _truth_vault[:] = [f for f in _truth_vault if f.get("id") != fact_id]
-    if len(_truth_vault) == before:
+    db = get_db()
+    cursor = db.conn.execute("DELETE FROM truth_vault WHERE id = ?", (fact_id,))
+    db.conn.commit()
+    if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Fact not found")
     return {"success": True}
 
 
 # ── Cross-Session State ─────────────────────────────────────────────
 
-# In-memory cross-session state for V1
-_cross_session_state: dict = {
-    "milestones": [],
-    "open_issues": [],
-    "failed_attempts": [],
-    "known_blockers": [],
-    "skills_learned": [],
-    "last_updated": datetime.now(timezone.utc).isoformat(),
-}
-
 
 @router.get("/cross-session-state")
 async def get_cross_session_state():
-    return _cross_session_state
+    db = get_db()
+    rows = db.conn.execute(
+        "SELECT * FROM cross_session_state ORDER BY created_at DESC"
+    ).fetchall()
+    state = {
+        "milestones": [],
+        "open_issues": [],
+        "failed_attempts": [],
+        "known_blockers": [],
+        "skills_learned": [],
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+    }
+    for r in rows:
+        cat = r["category"]
+        if cat in state:
+            try:
+                content = json.loads(r["content"]) if r["content"] else r["content"]
+            except (json.JSONDecodeError, TypeError):
+                content = r["content"]
+            state[cat].append({"id": r["id"], "content": content, "createdAt": r["created_at"]})
+    return state
 
 
-@router.delete("/cross-session-state/milestone/{milestone_id}")
-async def delete_milestone(milestone_id: str):
-    before = len(_cross_session_state.get("milestones", []))
-    _cross_session_state["milestones"] = [
-        m for m in _cross_session_state.get("milestones", []) if m != milestone_id
-    ]
-    if len(_cross_session_state["milestones"]) == before:
-        raise HTTPException(status_code=404, detail="Milestone not found")
-    _cross_session_state["last_updated"] = datetime.now(timezone.utc).isoformat()
+class CrossSessionItem(BaseModel):
+    category: str
+    content: str
+
+
+@router.post("/cross-session-state")
+async def add_cross_session_item(req: CrossSessionItem):
+    if req.category not in ("milestones", "open_issues", "failed_attempts", "known_blockers", "skills_learned"):
+        raise HTTPException(status_code=400, detail=f"Invalid category: {req.category}")
+    item_id = f"xs-{__import__('uuid').uuid4().hex[:8]}"
+    db = get_db()
+    db.conn.execute(
+        "INSERT INTO cross_session_state (id, category, content, created_at) VALUES (?, ?, ?, ?)",
+        (item_id, req.category, req.content, datetime.now(timezone.utc).isoformat()),
+    )
+    db.conn.commit()
+    return {"id": item_id}
+
+
+@router.delete("/cross-session-state/{item_id}")
+async def delete_cross_session_item(item_id: str):
+    db = get_db()
+    cursor = db.conn.execute("DELETE FROM cross_session_state WHERE id = ?", (item_id,))
+    db.conn.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
     return {"success": True}
 
 
@@ -117,8 +177,6 @@ async def get_memory_store(
     if query:
         results = ms.retrieve_similar(query, top_k=limit)
     else:
-        # Get all via direct SQL
-        import sqlite3
         with sqlite3.connect(ms.db_path) as conn:
             conn.row_factory = sqlite3.Row
             q = "SELECT * FROM interactions"
@@ -149,7 +207,6 @@ async def store_interaction(req: StoreInteractionRequest):
 @router.delete("/memory-store/{interaction_id}")
 async def delete_interaction(interaction_id: str):
     ms = _get_memory_store()
-    import sqlite3
     with sqlite3.connect(ms.db_path) as conn:
         cursor = conn.execute("DELETE FROM interactions WHERE id = ?", (interaction_id,))
         conn.commit()
@@ -163,8 +220,11 @@ async def delete_interaction(interaction_id: str):
 
 @router.get("/stats")
 async def get_memory_stats():
+    db = get_db()
     ms = _get_memory_store()
     ms_stats = ms.get_stats()
+    vault_count = db.conn.execute("SELECT COUNT(*) FROM truth_vault").fetchone()[0]
+    xs_count = db.conn.execute("SELECT COUNT(*) FROM cross_session_state").fetchone()[0]
     conv_count = 0
     try:
         convs = _list_conversations(limit=10000)
@@ -172,8 +232,8 @@ async def get_memory_stats():
     except Exception:
         pass
     return {
-        "truth_vault_count": len(_truth_vault),
-        "cross_session_milestones": len(_cross_session_state.get("milestones", [])),
+        "truth_vault_count": vault_count,
+        "cross_session_milestones": xs_count,
         "memory_store_count": ms_stats["total"],
         "conversations_count": conv_count,
         "skills_count": 0,
@@ -186,15 +246,22 @@ async def get_memory_stats():
 
 @router.post("/export")
 async def export_all_memory():
+    db = get_db()
     ms = _get_memory_store()
-    import sqlite3
     with sqlite3.connect(ms.db_path) as conn:
         conn.row_factory = sqlite3.Row
         interactions = [dict(r) for r in conn.execute("SELECT * FROM interactions").fetchall()]
 
+    vault = [
+        dict(r) for r in db.conn.execute("SELECT * FROM truth_vault").fetchall()
+    ]
+    xs = [
+        dict(r) for r in db.conn.execute("SELECT * FROM cross_session_state").fetchall()
+    ]
+
     data = {
-        "truth_vault": _truth_vault,
-        "cross_session_state": _cross_session_state,
+        "truth_vault": vault,
+        "cross_session_state": xs,
         "memory_store": interactions,
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -221,18 +288,32 @@ class CleanupRequest(BaseModel):
 
 @router.post("/cleanup")
 async def cleanup_memory(req: CleanupRequest):
+    db = get_db()
     ms = _get_memory_store()
-    import sqlite3
-    from datetime import timedelta
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=req.days)).isoformat()
     with sqlite3.connect(ms.db_path) as conn:
-        cursor = conn.execute(
-            "DELETE FROM interactions WHERE timestamp < ?", (cutoff,)
-        )
-        deleted = cursor.rowcount
+        cursor = conn.execute("DELETE FROM interactions WHERE timestamp < ?", (cutoff,))
+        deleted_interactions = cursor.rowcount
         conn.commit()
-    return {"success": True, "days": req.days, "deleted_count": deleted}
+
+    cursor = db.conn.execute(
+        "DELETE FROM truth_vault WHERE expires_at IS NOT NULL AND expires_at < ?",
+        (cutoff,),
+    )
+    deleted_vault = cursor.rowcount
+    cursor = db.conn.execute(
+        "DELETE FROM cross_session_state WHERE created_at < ?",
+        (cutoff,),
+    )
+    deleted_xs = cursor.rowcount
+    db.conn.commit()
+
+    return {
+        "success": True,
+        "days": req.days,
+        "deleted_count": deleted_interactions + deleted_vault + deleted_xs,
+    }
 
 
 # ── Corrections / Feedback ──────────────────────────────────────────
@@ -259,20 +340,17 @@ class FeedbackRequest(BaseModel):
     type: str  # "up" or "down"
 
 
-# In-memory feedback store for V1
-_feedback_store: dict[str, list[dict]] = {}
-
-
 @router.post("/feedback/{message_id}")
 async def store_message_feedback(message_id: str, req: FeedbackRequest):
     if req.type not in ("up", "down"):
         raise HTTPException(status_code=400, detail="Type must be 'up' or 'down'")
-    if message_id not in _feedback_store:
-        _feedback_store[message_id] = []
-    _feedback_store[message_id].append({
-        "type": req.type,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
+    fb_id = f"fb-{__import__('uuid').uuid4().hex[:8]}"
+    db = get_db()
+    db.conn.execute(
+        "INSERT INTO message_feedback (id, message_id, feedback, created_at) VALUES (?, ?, ?, ?)",
+        (fb_id, message_id, req.type, datetime.now(timezone.utc).isoformat()),
+    )
+    db.conn.commit()
     return {"success": True}
 
 
@@ -281,11 +359,25 @@ async def store_message_feedback(message_id: str, req: FeedbackRequest):
 
 @router.get("/search")
 async def search_all(q: str):
+    db = get_db()
     ms = _get_memory_store()
-    truth_results = [f for f in _truth_vault if q.lower() in f.get("query", "").lower()]
+
+    vault_rows = db.conn.execute(
+        "SELECT * FROM truth_vault WHERE query LIKE ? OR answer LIKE ?",
+        (f"%{q}%", f"%{q}%"),
+    ).fetchall()
+    truth_results = [
+        {
+            "id": r["id"],
+            "query": r["query"],
+            "answer": r["answer"],
+            "sources": json.loads(r["sources"]) if r["sources"] else [],
+            "confidence": r["confidence"],
+        }
+        for r in vault_rows
+    ]
 
     memory_results = ms.retrieve_similar(q, top_k=10)
-
     conv_results = search_conversations(q, limit=10)
 
     return {

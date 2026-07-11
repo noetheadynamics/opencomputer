@@ -7,6 +7,9 @@ import {
   PlugZap,
   Wrench,
   Paperclip,
+  Plus,
+  MessageSquare,
+  Trash2,
 } from "lucide-react";
 import {
   streamPhaosChat,
@@ -16,11 +19,10 @@ import {
 } from "@/lib/api";
 import type { Provider } from "@/lib/providers";
 import { cn } from "@/lib/utils";
-import type {
-  ChatAttachment,
-  ChatReaction,
-  CommandItem,
-} from "@/types/chat";
+import type { ChatAttachment, ChatReaction, CommandItem } from "@/types/chat";
+import { DEFAULT_SYSTEM_PROMPT } from "@/types/conversation";
+import { useConversations } from "../hooks/useConversations";
+import { useMessages } from "../hooks/useMessages";
 import { ReactionPicker } from "./chat/ReactionPicker";
 import { ReplyIndicator } from "./chat/ReplyIndicator";
 import { MessageEditor } from "./chat/MessageEditor";
@@ -51,6 +53,7 @@ interface UIMessage {
   attachments?: ChatAttachment[];
   isEdited?: boolean;
   timestamp: number;
+  saved?: boolean;
 }
 
 function uid() {
@@ -83,6 +86,21 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [showSidebar, setShowSidebar] = React.useState(false);
+
+  // Conversation persistence
+  const {
+    conversations,
+    activeId: activeConvId,
+    create: createConversation,
+    remove: removeConversation,
+    setActiveId: setActiveConvId,
+  } = useConversations();
+  const {
+    messages: dbMessages,
+    load: loadMessages,
+    addMessage: saveMessage,
+  } = useMessages();
 
   // Sub-feature state
   const [replyTo, setReplyTo] = React.useState<UIMessage | null>(null);
@@ -93,6 +111,32 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>([]);
   const [showScrollBtn, setShowScrollBtn] = React.useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = React.useState<string | null>(null);
+
+  // Load messages when conversation changes
+  React.useEffect(() => {
+    if (activeConvId) {
+      loadMessages(activeConvId).then(() => {
+        // Convert DB messages to UIMessages
+        const uiMsgs: UIMessage[] = dbMessages.map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          timestamp: new Date(m.created_at).getTime(),
+          saved: true,
+        }));
+        setMessages(uiMsgs);
+      });
+    } else {
+      setMessages([]);
+    }
+  }, [activeConvId]);
+
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo?.({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages]);
 
   React.useEffect(() => {
     const el = scrollRef.current;
@@ -106,13 +150,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   }, []);
 
   React.useEffect(() => {
-    if (!showScrollBtn) {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-    }
-  }, [messages, showScrollBtn]);
-
-  // Detect / commands
-  React.useEffect(() => {
     if (input.startsWith("/") && input.length < 20) {
       setShowCommandPalette(true);
       setCommandFilter(input);
@@ -120,6 +157,19 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
       setShowCommandPalette(false);
     }
   }, [input]);
+
+  // Save a message to the backend
+  const persistMessage = React.useCallback(
+    async (role: "user" | "assistant", content: string) => {
+      if (!activeConvId || !content.trim()) return;
+      try {
+        await saveMessage(activeConvId, role, content);
+      } catch (err) {
+        console.error("Failed to persist message:", err);
+      }
+    },
+    [activeConvId, saveMessage],
+  );
 
   function handleCommandSelect(cmd: CommandItem) {
     setShowCommandPalette(false);
@@ -130,6 +180,16 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     }
     if (cmd.handler === "file") {
       fileInputRef.current?.click();
+      setInput("");
+      return;
+    }
+    if (cmd.handler === "compact") {
+      setInput("");
+      return;
+    }
+    if (cmd.handler === "export") {
+      const text = messages.map((m) => `${m.role}: ${m.content}`).join("\n\n");
+      navigator.clipboard.writeText(text);
       setInput("");
       return;
     }
@@ -216,11 +276,41 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     inputRef.current?.focus();
   }
 
+  async function handleNewChat() {
+    await createConversation("New Chat");
+    setMessages([]);
+    setInput("");
+  }
+
+  async function handleSelectConversation(convId: string) {
+    setActiveConvId(convId);
+    setShowSidebar(false);
+  }
+
+  async function handleDeleteConversation(convId: string) {
+    await removeConversation(convId);
+    if (activeConvId === convId) {
+      setMessages([]);
+    }
+  }
+
   const send = React.useCallback(async () => {
     const text = input.trim();
     if ((!text && attachments.length === 0) || !provider || busy) return;
     setInput("");
     setReplyTo(null);
+
+    // Auto-create conversation if none active
+    let convId = activeConvId;
+    if (!convId) {
+      try {
+        const conv = await createConversation(text.slice(0, 50));
+        convId = conv.id;
+      } catch (err) {
+        console.error("Failed to create conversation:", err);
+        return;
+      }
+    }
 
     const userMsg: UIMessage = {
       id: uid(),
@@ -242,6 +332,9 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     };
     setMessages((m) => [...m, userMsg, assistantMsg]);
     setBusy(true);
+
+    // Persist user message
+    await persistMessage("user", text);
 
     const history: ChatMessage[] = [
       ...messages
@@ -271,12 +364,17 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               msg.toolCall?.id === result.id ? { ...msg, toolResult: result } : msg,
             ),
           ),
-        onDone: () =>
+        onDone: async (fullResponse) => {
           setMessages((m) =>
             m.map((msg) =>
               msg.id === assistantId ? { ...msg, streaming: false } : msg,
             ),
-          ),
+          );
+          // Persist assistant response
+          if (fullResponse) {
+            await persistMessage("assistant", fullResponse);
+          }
+        },
         onError: (message) =>
           setMessages((m) =>
             m.map((msg) =>
@@ -286,10 +384,10 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
             ),
           ),
       },
-      systemPrompt || "You are a helpful AI assistant with access to tools. Use them when appropriate.",
+      systemPrompt || DEFAULT_SYSTEM_PROMPT,
     );
     setBusy(false);
-  }, [input, provider, busy, messages, attachments, replyTo]);
+  }, [input, provider, busy, messages, attachments, replyTo, activeConvId, persistMessage, systemPrompt]);
 
   if (!provider) {
     return (
@@ -326,7 +424,70 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         onChange={handleFileAttach}
       />
 
-      {/* Reply indicator */}
+      {/* Conversation sidebar toggle */}
+      <div className="flex items-center border-b border-white/5 px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setShowSidebar(!showSidebar)}
+          className="oc-glass-btn flex items-center gap-1.5 px-2.5 py-1 text-xs text-oc-text-secondary hover:text-oc-accent"
+        >
+          <MessageSquare size={14} />
+          {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+        </button>
+        <div className="flex-1" />
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={handleNewChat}
+          className="oc-glass-btn flex items-center gap-1 px-2.5 py-1 text-xs text-oc-text-secondary hover:text-oc-accent"
+        >
+          <Plus size={14} />
+          New Chat
+        </motion.button>
+      </div>
+
+      {/* Conversation sidebar */}
+      <AnimatePresence>
+        {showSidebar && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-b border-white/5"
+          >
+            <div className="max-h-48 overflow-y-auto px-2 py-2">
+              {conversations.length === 0 && (
+                <div className="px-3 py-2 text-xs text-oc-text-secondary">No conversations yet</div>
+              )}
+              {conversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={cn(
+                    "group flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs cursor-pointer hover:bg-white/5",
+                    activeConvId === conv.id && "bg-oc-accent/10 text-oc-accent",
+                  )}
+                  onClick={() => handleSelectConversation(conv.id)}
+                >
+                  <MessageSquare size={12} className="shrink-0" />
+                  <span className="flex-1 truncate">{conv.title || "Untitled"}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteConversation(conv.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-oc-text-secondary hover:text-red-400"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {replyTo && (
         <ReplyIndicator replyTo={replyTo as never} onClose={() => setReplyTo(null)} />
       )}
@@ -389,14 +550,12 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                   )}
 
                   <div className="max-w-[75%]">
-                    {/* Reply preview */}
                     {msg.replyTo && (
                       <div className="mb-1 text-xs text-oc-text-secondary italic truncate max-w-[200px]">
                         ↳ {messages.find((m) => m.id === msg.replyTo)?.content.slice(0, 50) ?? "…"}
                       </div>
                     )}
 
-                    {/* Attachments */}
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="mb-1 flex flex-wrap gap-1">
                         {msg.attachments.map((a) => (
@@ -405,7 +564,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                       </div>
                     )}
 
-                    {/* Message bubble */}
                     {editingId === msg.id ? (
                       <MessageEditor
                         content={msg.content}
@@ -432,7 +590,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                       </div>
                     )}
 
-                    {/* Reactions */}
                     {msg.reactions && msg.reactions.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {msg.reactions.map((r) => (
@@ -455,7 +612,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                       </div>
                     )}
 
-                    {/* Link previews (for assistant messages with URLs) */}
                     {msg.role === "assistant" && !msg.streaming && extractUrls(msg.content).length > 0 && (
                       <div className="mt-2 space-y-2">
                         {extractUrls(msg.content).slice(0, 2).map((url) => (
@@ -464,7 +620,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                       </div>
                     )}
 
-                    {/* Feedback on assistant messages */}
                     {msg.role === "assistant" && !msg.streaming && msg.content && (
                       <MessageFeedback
                         messageId={msg.id}
@@ -480,7 +635,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                     </div>
                   )}
 
-                  {/* Reaction button on hover */}
                   {msg.role === "assistant" && !msg.streaming && (
                     <button
                       type="button"
@@ -493,7 +647,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                 </div>
               )}
 
-              {/* Reaction picker popup */}
               {reactionPickerMsgId === msg.id && (
                 <ReactionPicker
                   isOpen
@@ -506,7 +659,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         </AnimatePresence>
       </div>
 
-      {/* Scroll to bottom */}
       <ScrollToBottom
         show={showScrollBtn}
         onClick={() => {
@@ -515,7 +667,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         }}
       />
 
-      {/* Command palette */}
       {showCommandPalette && (
         <CommandPalette
           isOpen={showCommandPalette}
@@ -527,7 +678,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
 
       {/* Input area */}
       <div className="shrink-0 px-4 py-3 md:px-6">
-        {/* Attachment previews */}
         {attachments.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachments.map((a) => (
@@ -540,11 +690,9 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
           </div>
         )}
 
-        {/* Formatting toolbar */}
         <FormattingToolbar onFormat={handleFormat} />
 
         <div className="flex items-end gap-2">
-          {/* Attach button */}
           <motion.button
             type="button"
             whileHover={{ scale: 1.1 }}
@@ -594,7 +742,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         </div>
       </div>
 
-      {/* Long press / context menu */}
       <LongPressMenu
         isOpen={!!longPressMsg}
         onClose={() => setLongPressMsg(null)}

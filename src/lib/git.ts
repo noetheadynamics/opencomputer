@@ -36,20 +36,12 @@ let _repo: MockRepo | null = null;
 function getRepo(): MockRepo {
   if (!_repo) {
     _repo = {
-      files: new Map([
-        ["src/main.ts", { content: "console.log('hello')", staged: false, tracked: true, status: "modified" }],
-        ["src/utils.ts", { content: "export const x = 1", staged: false, tracked: true, status: "modified" }],
-        ["README.md", { content: "# OpenComputer", staged: false, tracked: true, status: "modified" }],
-        ["new-file.txt", { content: "new content", staged: false, tracked: false, status: "untracked" }],
-      ]),
+      files: new Map(),
       branches: [
         { name: "main", current: true },
-        { name: "feature/ui", current: false },
       ],
       currentBranch: "main",
-      commits: [
-        { hash: "abc1234", message: "Initial commit", files: ["src/main.ts", "README.md"] },
-      ],
+      commits: [],
       log: [],
     };
   }

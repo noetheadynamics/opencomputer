@@ -1,18 +1,17 @@
-"""Audit Log API — query and export security audit entries."""
+"""Audit Log API — query and export security audit entries (SQLite-backed)."""
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
 
-router = APIRouter()
+from ..db.database import get_db
 
-_entries: list[dict[str, Any]] = []
-_seeded = False
+router = APIRouter()
 
 
 def log_audit(
@@ -20,63 +19,85 @@ def log_audit(
     description: str,
     outcome: str = "executed",
     task_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    metadata: dict | None = None,
+) -> dict:
     entry = {
         "id": f"audit-{uuid.uuid4().hex[:8]}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "description": description,
         "outcome": outcome,
-        "taskId": task_id,
+        "task_id": task_id,
         "metadata": metadata or {},
     }
-    _entries.insert(0, entry)
-    if len(_entries) > 1000:
-        _entries.pop()
+    db = get_db()
+    db.conn.execute(
+        "INSERT INTO audit_logs (id, action, outcome, details, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (
+            entry["id"],
+            f"{action}: {description}",
+            entry["outcome"],
+            json.dumps({"task_id": task_id, **entry["metadata"]}),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    db.conn.commit()
     return entry
-
-
-def _seed_if_needed():
-    """Seed sample entries on first access."""
-    global _seeded
-    if _seeded:
-        return
-    _seeded = True
-    log_audit("file_read", "Read file src/App.tsx", "executed")
-    log_audit("terminal_command", "Run command: ls -la", "executed", task_id="task-1")
-    log_audit("git_push", "Push to origin/main", "approved", task_id="task-2")
-
-
-@router.on_event("startup")
-async def startup():
-    _seed_if_needed()
 
 
 @router.get("/")
 async def list_audit(
     action: str | None = Query(None),
     outcome: str | None = Query(None),
-    date_from: str | None = Query(None),
-    date_to: str | None = Query(None),
     task_id: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
 ):
-    result = list(_entries)
+    db = get_db()
+    query = "SELECT * FROM audit_logs WHERE 1=1"
+    params: list = []
+
     if action:
-        result = [e for e in result if e["action"] == action]
+        query += " AND action LIKE ?"
+        params.append(f"%{action}%")
     if outcome:
-        result = [e for e in result if e["outcome"] == outcome]
+        query += " AND outcome = ?"
+        params.append(outcome)
     if task_id:
-        result = [e for e in result if e["taskId"] == task_id]
-    return result
+        query += " AND details LIKE ?"
+        params.append(f'%"{task_id}"%')
+
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+
+    rows = db.conn.execute(query, params).fetchall()
+    results = []
+    for r in rows:
+        details = {}
+        try:
+            details = json.loads(r["details"]) if r["details"] else {}
+        except (json.JSONDecodeError, TypeError):
+            pass
+        results.append({
+            "id": r["id"],
+            "timestamp": r["timestamp"],
+            "action": r["action"],
+            "description": r["action"],
+            "outcome": r["outcome"],
+            "taskId": details.get("task_id"),
+            "metadata": {k: v for k, v in details.items() if k != "task_id"},
+        })
+    return results
 
 
 @router.get("/export")
 async def export_audit_csv():
-    header = "Timestamp,Action,Description,Outcome,Task ID\n"
-    rows = []
-    for e in _entries:
-        desc = e["description"].replace('"', '""')
-        rows.append(f'"{e["timestamp"]}","{e["action"]}","{desc}","{e["outcome"]}","{e["taskId"] or ""}"')
-    csv = header + "\n".join(rows)
-    return PlainTextResponse(csv, media_type="text/csv")
+    db = get_db()
+    rows = db.conn.execute(
+        "SELECT * FROM audit_logs ORDER BY timestamp DESC"
+    ).fetchall()
+    header = "Timestamp,Action,Outcome,Details\n"
+    lines = []
+    for r in rows:
+        desc = (r["action"] or "").replace('"', '""')
+        det = (r["details"] or "").replace('"', '""')
+        lines.append(f'"{r["timestamp"]}","{desc}","{r["outcome"]}","{det}"')
+    return PlainTextResponse(header + "\n".join(lines), media_type="text/csv")

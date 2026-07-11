@@ -71,67 +71,31 @@ const mockHistory: HistoryEntry[] = [];
 function mockExecute(command: string, _projectRoot: string): CommandOutput {
   const parts = command.trim().split(/\s+/);
   const bin = parts[0] ?? "";
-  const args = parts.slice(1);
 
-  // Echo mock
   if (bin === "echo") {
-    const stdout = args.join(" ");
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
+    const stdout = parts.slice(1).join(" ");
+    mockHistory.push({ command, output: stdout, timestamp: Date.now() });
     return { stdout, stderr: "", exit_code: 0, timed_out: false };
   }
 
-  // Pwd mock
   if (bin === "pwd") {
-    const stdout = _projectRoot;
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
+    mockHistory.push({ command, output: _projectRoot, timestamp: Date.now() });
+    return { stdout: _projectRoot, stderr: "", exit_code: 0, timed_out: false };
   }
 
-  // Ls mock
-  if (bin === "ls") {
-    const stdout = "README.md\npackage.json\nsrc/\ndocs/\n";
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  // Cat mock
-  if (bin === "cat") {
-    const file = args[0] ?? "";
-    if (file === "README.md") {
-      const stdout = "# OpenComputer\n\nWelcome to your project.\n";
-      const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-      mockHistory.push(entry);
-      return { stdout, stderr: "", exit_code: 0, timed_out: false };
-    }
-    const stdout = `Mock content for ${file}\n`;
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  // Date mock
   if (bin === "date") {
     const stdout = new Date().toString();
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
+    mockHistory.push({ command, output: stdout, timestamp: Date.now() });
     return { stdout, stderr: "", exit_code: 0, timed_out: false };
   }
 
-  // Whoami mock
   if (bin === "whoami") {
-    const stdout = "opencomputer-user";
-    const entry: HistoryEntry = { command, output: stdout, timestamp: Date.now() };
-    mockHistory.push(entry);
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
+    mockHistory.push({ command, output: "opencomputer-user", timestamp: Date.now() });
+    return { stdout: "opencomputer-user", stderr: "", exit_code: 0, timed_out: false };
   }
 
-  // Unknown command
-  const stderr = `Command not found in browser mock: ${bin}`;
-  const entry: HistoryEntry = { command, output: stderr, timestamp: Date.now() };
-  mockHistory.push(entry);
+  const stderr = `Command not available in browser mode: ${bin}`;
+  mockHistory.push({ command, output: stderr, timestamp: Date.now() });
   return { stdout: "", stderr, exit_code: 127, timed_out: false };
 }
 

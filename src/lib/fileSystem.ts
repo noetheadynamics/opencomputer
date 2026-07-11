@@ -84,24 +84,7 @@ function logOp(operation: string, path: string, status: "success" | "error", det
 function seed(root: string) {
   if (mockFs.has(root)) return;
   const now = Date.now();
-  const put = (path: string, is_dir: boolean, content = "") =>
-    mockFs.set(path, { is_dir, content, modified: now });
-  put(root, true);
-  put(`${root}/README.md`, false, "# OpenComputer\n\nWelcome to your project.\n");
-  put(
-    `${root}/package.json`,
-    false,
-    JSON.stringify({ name: "demo-project", version: "1.0.0" }, null, 2),
-  );
-  put(`${root}/src`, true);
-  put(
-    `${root}/src/App.tsx`,
-    false,
-    "export default function App() {\n  return <h1>Hello</h1>;\n}\n",
-  );
-  put(`${root}/src/main.tsx`, false, "import App from './App';\n");
-  put(`${root}/docs`, true);
-  put(`${root}/docs/notes.md`, false, "## Notes\n\nPhase 2 file system.\n");
+  mockFs.set(root, { is_dir: true, content: "", modified: now });
 }
 
 function mockChildren(dir: string): FileEntry[] {

@@ -1,4 +1,5 @@
 import type { AppNotification, NotificationType } from "@/types/notifications";
+import { PHAOS_BASE } from "./config";
 
 let _notifications: AppNotification[] = [];
 let _listeners: Array<() => void> = [];
@@ -28,6 +29,13 @@ export function addNotification(
   };
   _notifications.unshift(n);
   _notify();
+
+  fetch(`${PHAOS_BASE}/api/notifications/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, message: body, type }),
+  }).catch(() => {});
+
   return n;
 }
 
@@ -35,16 +43,37 @@ export function markRead(id: string): void {
   const n = _notifications.find((x) => x.id === id);
   if (n) n.read = true;
   _notify();
+
+  fetch(`${PHAOS_BASE}/api/notifications/${id}/read`, { method: "PATCH" }).catch(() => {});
 }
 
 export function markAllRead(): void {
   _notifications.forEach((n) => (n.read = true));
   _notify();
+
+  fetch(`${PHAOS_BASE}/api/notifications/read-all`, { method: "PATCH" }).catch(() => {});
 }
 
 export function clearNotifications(): void {
   _notifications = [];
   _notify();
+}
+
+export async function loadNotifications(): Promise<void> {
+  try {
+    const res = await fetch(`${PHAOS_BASE}/api/notifications/`);
+    if (!res.ok) return;
+    const data = await res.json();
+    _notifications = data.map((n: Record<string, unknown>) => ({
+      id: n.id as string,
+      type: (n.type as NotificationType) ?? "info",
+      title: n.title as string,
+      body: n.message as string,
+      read: n.read as boolean,
+      timestamp: new Date(n.createdAt as string).getTime(),
+    }));
+    _notify();
+  } catch {}
 }
 
 export function onNotificationsChange(fn: () => void): () => void {

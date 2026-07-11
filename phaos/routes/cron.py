@@ -1,17 +1,17 @@
-"""Cron / Scheduled Tasks API — CRUD for scheduled tasks."""
+"""Cron / Scheduled Tasks API — CRUD for scheduled tasks (SQLite-backed)."""
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter()
+from ..db.database import get_db
 
-_jobs: dict[str, dict[str, Any]] = {}
+router = APIRouter()
 
 
 class CronJobCreate(BaseModel):
@@ -30,49 +30,73 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _next_run(schedule: str) -> str:
-    return _now()
+def _row_to_dict(row) -> dict:
+    return {
+        "id": row["id"],
+        "description": row["name"],
+        "schedule": row["schedule"],
+        "enabled": bool(row["enabled"]),
+        "lastRun": row["last_run"],
+        "nextRun": row["next_run"],
+        "createdAt": row["created_at"],
+    }
 
 
 @router.get("/")
 async def list_jobs():
-    return list(_jobs.values())
+    db = get_db()
+    rows = db.conn.execute(
+        "SELECT * FROM cron_jobs ORDER BY created_at DESC"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 @router.post("/")
 async def create_job(req: CronJobCreate):
     job_id = f"cron-{uuid.uuid4().hex[:8]}"
-    job = {
-        "id": job_id,
-        "description": req.description,
-        "schedule": req.schedule,
-        "enabled": req.enabled,
-        "lastRun": None,
-        "lastStatus": None,
-        "nextRun": _next_run(req.schedule),
-        "createdAt": _now(),
-    }
-    _jobs[job_id] = job
-    return job
+    db = get_db()
+    db.conn.execute(
+        "INSERT INTO cron_jobs (id, name, schedule, command, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (job_id, req.description, req.schedule, req.description, int(req.enabled), _now()),
+    )
+    db.conn.commit()
+    row = db.conn.execute("SELECT * FROM cron_jobs WHERE id = ?", (job_id,)).fetchone()
+    return _row_to_dict(row)
 
 
 @router.patch("/{job_id}")
 async def update_job(job_id: str, body: CronJobUpdate):
-    job = _jobs.get(job_id)
-    if not job:
+    db = get_db()
+    row = db.conn.execute("SELECT * FROM cron_jobs WHERE id = ?", (job_id,)).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    updates = []
+    params: list = []
     if body.description is not None:
-        job["description"] = body.description
+        updates.append("name = ?")
+        params.append(body.description)
     if body.schedule is not None:
-        job["schedule"] = body.schedule
+        updates.append("schedule = ?")
+        params.append(body.schedule)
     if body.enabled is not None:
-        job["enabled"] = body.enabled
-    return job
+        updates.append("enabled = ?")
+        params.append(int(body.enabled))
+
+    if updates:
+        params.append(job_id)
+        db.conn.execute(f"UPDATE cron_jobs SET {', '.join(updates)} WHERE id = ?", params)
+        db.conn.commit()
+
+    row = db.conn.execute("SELECT * FROM cron_jobs WHERE id = ?", (job_id,)).fetchone()
+    return _row_to_dict(row)
 
 
 @router.delete("/{job_id}")
 async def delete_job(job_id: str):
-    if job_id not in _jobs:
+    db = get_db()
+    cursor = db.conn.execute("DELETE FROM cron_jobs WHERE id = ?", (job_id,))
+    db.conn.commit()
+    if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Job not found")
-    del _jobs[job_id]
     return {"deleted": True}
