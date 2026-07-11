@@ -34,6 +34,7 @@ import { MessageFeedback } from "./chat/MessageFeedback";
 import { TypingIndicator } from "./chat/TypingIndicator";
 import { ScrollToBottom } from "./chat/ScrollToBottom";
 import { LongPressMenu } from "./chat/LongPressMenu";
+import { MessageContent } from "./MessageContent";
 
 interface ChatViewProps {
   provider: Provider | null;
@@ -97,7 +98,6 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     setActiveId: setActiveConvId,
   } = useConversations();
   const {
-    messages: dbMessages,
     load: loadMessages,
     addMessage: saveMessage,
   } = useMessages();
@@ -112,12 +112,11 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const [showScrollBtn, setShowScrollBtn] = React.useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = React.useState<string | null>(null);
 
-  // Load messages when conversation changes
+  // Load messages when conversation changes — use returned value to avoid stale closure
   React.useEffect(() => {
     if (activeConvId) {
-      loadMessages(activeConvId).then(() => {
-        // Convert DB messages to UIMessages
-        const uiMsgs: UIMessage[] = dbMessages.map((m) => ({
+      loadMessages(activeConvId).then((msgs) => {
+        const uiMsgs: UIMessage[] = msgs.map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -129,7 +128,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     } else {
       setMessages([]);
     }
-  }, [activeConvId]);
+  }, [activeConvId, loadMessages]);
 
   React.useEffect(() => {
     scrollRef.current?.scrollTo?.({
@@ -158,17 +157,17 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     }
   }, [input]);
 
-  // Save a message to the backend
+  // Save a message to the backend — takes convId to avoid stale closure
   const persistMessage = React.useCallback(
-    async (role: "user" | "assistant", content: string) => {
-      if (!activeConvId || !content.trim()) return;
+    async (convId: string, role: "user" | "assistant", content: string) => {
+      if (!convId || !content.trim()) return;
       try {
-        await saveMessage(activeConvId, role, content);
+        await saveMessage(convId, role, content);
       } catch (err) {
         console.error("Failed to persist message:", err);
       }
     },
-    [activeConvId, saveMessage],
+    [saveMessage],
   );
 
   function handleCommandSelect(cmd: CommandItem) {
@@ -333,8 +332,8 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     setMessages((m) => [...m, userMsg, assistantMsg]);
     setBusy(true);
 
-    // Persist user message
-    await persistMessage("user", text);
+    // Persist user message using local convId
+    await persistMessage(convId, "user", text);
 
     const history: ChatMessage[] = [
       ...messages
@@ -370,9 +369,9 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               msg.id === assistantId ? { ...msg, streaming: false } : msg,
             ),
           );
-          // Persist assistant response
+          // Persist assistant response using local convId
           if (fullResponse) {
-            await persistMessage("assistant", fullResponse);
+            await persistMessage(convId, "assistant", fullResponse);
           }
         },
         onError: (message) =>
@@ -579,7 +578,11 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                             : "oc-glass-3d rounded-2xl text-oc-text-primary",
                         )}
                       >
-                        {msg.content || (msg.streaming ? "" : "")}
+                        {msg.role === "assistant" ? (
+                          <MessageContent content={msg.content} />
+                        ) : (
+                          msg.content || (msg.streaming ? "" : "")
+                        )}
                         {msg.streaming && !msg.content && <TypingIndicator />}
                         {msg.streaming && msg.content && (
                           <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-oc-accent align-middle" />

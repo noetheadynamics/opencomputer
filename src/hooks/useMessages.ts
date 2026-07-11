@@ -10,7 +10,7 @@ interface UseMessagesReturn {
   messages: Message[];
   loading: boolean;
   error: string | null;
-  load: (conversationId: string) => Promise<void>;
+  load: (conversationId: string) => Promise<Message[]>;
   addMessage: (conversationId: string, role: 'user' | 'assistant' | 'system', content: string) => Promise<Message>;
   updateMessage: (conversationId: string, messageId: string, content: string) => Promise<void>;
   deleteMessage: (conversationId: string, messageId: string) => Promise<void>;
@@ -22,14 +22,17 @@ export function useMessages(): UseMessagesReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (conversationId: string) => {
+  const load = useCallback(async (conversationId: string): Promise<Message[]> => {
     try {
       setLoading(true);
       setError(null);
       const conv = await conversationApi.get(conversationId);
-      setMessages(conv.messages || []);
+      const msgs = conv.messages || [];
+      setMessages(msgs);
+      return msgs;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
+      return [];
     } finally {
       setLoading(false);
     }
