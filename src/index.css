@@ -251,6 +251,7 @@ body {
   position: relative;
   width: 52px;
   height: 52px;
+  aspect-ratio: 1;
   border-radius: 50%;
   display: flex;
   align-items: center;

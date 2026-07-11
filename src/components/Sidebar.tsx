@@ -131,7 +131,6 @@ export function Sidebar({ active, onNavigate, isDark }: SidebarProps) {
                 !isDark && "light-theme",
                 isActive && "active",
               )}
-              style={{ width: 52, height: 52, borderRadius: "50%" }}
             >
               <Icon
                 size={20}
