@@ -116,9 +116,16 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const [reactionPickerMsgId, setReactionPickerMsgId] = React.useState<string | null>(null);
 
   // Load messages when conversation changes — use returned value to avoid stale closure
+  // Track which conversation we're loading to prevent race conditions
+  const loadingConvIdRef = React.useRef<string | null>(null);
+
   React.useEffect(() => {
     if (activeConvId) {
+      loadingConvIdRef.current = activeConvId;
+      setMessages([]);
       loadMessages(activeConvId).then((msgs) => {
+        // Only apply if we haven't switched to a different conversation
+        if (loadingConvIdRef.current !== activeConvId) return;
         const uiMsgs: UIMessage[] = msgs.map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
@@ -129,6 +136,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         setMessages(uiMsgs);
       });
     } else {
+      loadingConvIdRef.current = null;
       setMessages([]);
     }
   }, [activeConvId, loadMessages]);

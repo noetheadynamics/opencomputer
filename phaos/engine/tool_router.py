@@ -139,6 +139,108 @@ class SandboxedExecutor:
             ToolDefinition(name="done", description="Signal task completion", parameters={"type": "object", "properties": {"response": {"type": "string"}}, "required": ["response"]}, risk_level="low", sandbox_required=False),
             self._exec_done
         )
+        self.registry.register(
+            ToolDefinition(
+                name="create_cron_job",
+                description="Create a scheduled task (cron job). Use cron syntax for schedule. Examples: '* * * * *' = every minute, '0 9 * * *' = daily at 9am, '*/5 * * * *' = every 5 minutes.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Name/title of the job"},
+                        "schedule": {"type": "string", "description": "Cron schedule expression (minute hour day month weekday)"},
+                        "command": {"type": "string", "description": "What to do — a reminder message or shell command"},
+                    },
+                    "required": ["name", "schedule", "command"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_create_cron_job,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="create_folder",
+                description="Create a new directory/folder in the workspace",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative path of the folder to create"},
+                    },
+                    "required": ["path"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_create_folder,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="list_directory",
+                description="List files and folders in a directory",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative path to list (default: workspace root)"},
+                    },
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_list_directory,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="add_truth_vault",
+                description="Store a verified fact in the Truth Vault for future reference",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The topic or question this fact answers"},
+                        "answer": {"type": "string", "description": "The verified fact/answer"},
+                        "sources": {"type": "array", "items": {"type": "string"}, "description": "Sources that verify this fact"},
+                        "confidence": {"type": "number", "description": "Confidence level 0.0-1.0"},
+                    },
+                    "required": ["query", "answer"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_add_truth_vault,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="add_notification",
+                description="Create an in-app notification for the user",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Notification title"},
+                        "message": {"type": "string", "description": "Notification body"},
+                        "type": {"type": "string", "enum": ["info", "success", "warning", "error"], "description": "Notification type"},
+                    },
+                    "required": ["title", "message"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_add_notification,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="search_workspace",
+                description="Search for files in the workspace by name pattern",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string", "description": "Filename pattern to search for (e.g. '*.py', '*.ts', 'README*')"},
+                    },
+                    "required": ["pattern"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_search_workspace,
+        )
         self._register_compact_tools()
     
     def _exec_terminal(self, args: dict) -> Any:
@@ -198,6 +300,101 @@ class SandboxedExecutor:
     
     def _exec_done(self, args: dict) -> str:
         return args.get("response", "")
+
+    def _exec_create_cron_job(self, args: dict) -> dict:
+        import uuid
+        from datetime import datetime, timezone
+        from ..db.database import get_db
+        name = args.get("name", "Untitled job")
+        schedule = args.get("schedule", "")
+        command = args.get("command", "")
+        if not schedule:
+            return {"error": "No schedule provided"}
+        db = get_db()
+        job_id = f"cron-{uuid.uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc).isoformat()
+        db.conn.execute(
+            "INSERT INTO cron_jobs (id, name, schedule, command, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (job_id, name, schedule, command, 1, now),
+        )
+        db.conn.commit()
+        return {"success": True, "job_id": job_id, "name": name, "schedule": schedule}
+
+    def _exec_create_folder(self, args: dict) -> dict:
+        import os
+        path = args.get("path", "")
+        if not path:
+            return {"error": "No path provided"}
+        full_path = os.path.join(self.workspace_root, path)
+        os.makedirs(full_path, exist_ok=True)
+        return {"success": True, "path": path}
+
+    def _exec_list_directory(self, args: dict) -> dict:
+        import os
+        path = args.get("path", ".")
+        full_path = os.path.join(self.workspace_root, path) if path != "." else self.workspace_root
+        if not os.path.isdir(full_path):
+            return {"error": f"Not a directory: {path}"}
+        entries = []
+        for name in sorted(os.listdir(full_path)):
+            child = os.path.join(full_path, name)
+            if os.path.isdir(child):
+                entries.append(f"  {name}/")
+            else:
+                size = os.path.getsize(child)
+                entries.append(f"  {name} ({size} bytes)")
+        return {"path": path, "entries": entries}
+
+    def _exec_add_truth_vault(self, args: dict) -> dict:
+        import uuid, json
+        from datetime import datetime, timezone
+        from ..db.database import get_db
+        query = args.get("query", "")
+        answer = args.get("answer", "")
+        sources = args.get("sources", [])
+        confidence = args.get("confidence", 0.8)
+        db = get_db()
+        fact_id = f"vault-{uuid.uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc).isoformat()
+        db.conn.execute(
+            "INSERT INTO truth_vault (id, query, answer, sources, confidence, ttl_hours, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (fact_id, query, answer, json.dumps(sources), confidence, 24, now),
+        )
+        db.conn.commit()
+        return {"success": True, "fact_id": fact_id}
+
+    def _exec_add_notification(self, args: dict) -> dict:
+        import uuid
+        from datetime import datetime, timezone
+        from ..db.database import get_db
+        title = args.get("title", "")
+        message = args.get("message", "")
+        ntype = args.get("type", "info")
+        db = get_db()
+        n_id = f"notif-{uuid.uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc).isoformat()
+        db.conn.execute(
+            "INSERT INTO notifications (id, title, message, type, created_at) VALUES (?, ?, ?, ?, ?)",
+            (n_id, title, message, ntype, now),
+        )
+        db.conn.commit()
+        return {"success": True, "notification_id": n_id}
+
+    def _exec_search_workspace(self, args: dict) -> dict:
+        import os, fnmatch
+        pattern = args.get("pattern", "*")
+        matches = []
+        for root, dirs, files in os.walk(self.workspace_root):
+            # Skip node_modules, .git, dist
+            dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", "dist", "__pycache__", ".next")]
+            for name in files + dirs:
+                if fnmatch.fnmatch(name.lower(), pattern.lower()):
+                    full = os.path.join(root, name)
+                    rel = os.path.relpath(full, self.workspace_root)
+                    matches.append(rel.replace("\\", "/"))
+                    if len(matches) >= 50:
+                        return {"pattern": pattern, "matches": matches, "truncated": True}
+        return {"pattern": pattern, "matches": matches}
 
     def _register_compact_tools(self):
         """Register DCP compaction tools: compact, discard, protect, prune."""
