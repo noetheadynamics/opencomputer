@@ -1,4 +1,5 @@
 import { isTauri } from "./storage";
+import { PHAOS_BASE } from "./config";
 import type { FileEntry, FileMetadata, UploadFile, AuditLogEntry } from "@/types/fileSystem";
 
 /* ------------------------------------------------------------------ */
@@ -34,15 +35,6 @@ function normalize(p: string): string {
   return "/" + out.join("/");
 }
 
-function parentOf(path: string): string {
-  const idx = path.lastIndexOf("/");
-  return idx <= 0 ? "/" : path.slice(0, idx);
-}
-
-function nameOf(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
-
 /** Converts a path that may be absolute (starts with projectRoot) into a
  *  path relative to projectRoot, matching the Rust command semantics. */
 function toRel(projectRoot: string, path: string): string {
@@ -52,16 +44,9 @@ function toRel(projectRoot: string, path: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Browser mock filesystem (used when not running inside Tauri)       */
+/* Audit log                                                          */
 /* ------------------------------------------------------------------ */
 
-interface MockNode {
-  is_dir: boolean;
-  content: string;
-  modified: number;
-}
-
-const mockFs = new Map<string, MockNode>();
 const auditLogs: AuditLogEntry[] = [];
 
 export function getAuditLogs(): AuditLogEntry[] {
@@ -77,43 +62,7 @@ function logOp(operation: string, path: string, status: "success" | "error", det
     detail,
   };
   auditLogs.push(entry);
-  // eslint-disable-next-line no-console
   console.log(`[audit] ${entry.operation} ${entry.status} ${entry.path}`, detail ?? "");
-}
-
-function seed(root: string) {
-  if (mockFs.has(root)) return;
-  const now = Date.now();
-  mockFs.set(root, { is_dir: true, content: "", modified: now });
-}
-
-function mockChildren(dir: string): FileEntry[] {
-  const entries: FileEntry[] = [];
-  for (const [path, node] of mockFs) {
-    if (parentOf(path) === dir) {
-      entries.push({
-        name: nameOf(path),
-        path,
-        is_dir: node.is_dir,
-        size: node.is_dir ? 0 : node.content.length,
-        modified: node.modified,
-      });
-    }
-  }
-  entries.sort((a, b) => {
-    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-  return entries;
-}
-
-function mockCollectDescendants(dir: string, out: string[]) {
-  for (const [path, node] of mockFs) {
-    if (path !== dir && path.startsWith(dir + "/") && node.is_dir) {
-      mockCollectDescendants(path, out);
-    }
-    if (path.startsWith(dir + "/")) out.push(path);
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -123,6 +72,48 @@ function mockCollectDescendants(dir: string, out: string[]) {
 async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
+}
+
+/* ------------------------------------------------------------------ */
+/* PHAOS API wrapper (browser mode)                                   */
+/* ------------------------------------------------------------------ */
+
+async function phaosGet<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+  const url = new URL(`${PHAOS_BASE}/api/files${endpoint}`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+async function phaosPost<T>(endpoint: string, body: unknown): Promise<T> {
+  const res = await fetch(`${PHAOS_BASE}/api/files${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(data.detail || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+async function phaosDelete(params?: Record<string, string>): Promise<void> {
+  const url = new URL(`${PHAOS_BASE}/api/files`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString(), { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || `API error ${res.status}`);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -141,10 +132,9 @@ export async function listDirectory(path: string, projectRoot: string): Promise<
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    const entries = mockChildren(safe);
-    logOp("list_directory", safe, "success");
+    const rel = toRel(projectRoot, path);
+    const entries = await phaosGet<FileEntry[]>("", { path: `/${rel}` });
+    logOp("list_directory", path, "success");
     return entries;
   } catch (e) {
     logOp("list_directory", path, "error", String(e));
@@ -164,12 +154,10 @@ export async function readFile(path: string, projectRoot: string): Promise<strin
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    const node = mockFs.get(safe);
-    if (!node || node.is_dir) throw new Error("File not found");
-    logOp("read_file", safe, "success");
-    return node.content;
+    const rel = toRel(projectRoot, path);
+    const data = await phaosGet<{ content: string }>("/read", { path: `/${rel}` });
+    logOp("read_file", path, "success");
+    return data.content;
   } catch (e) {
     logOp("read_file", path, "error", String(e));
     throw e;
@@ -192,18 +180,9 @@ export async function writeFile(
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    const parent = parentOf(safe);
-    if (!mockFs.has(parent)) throw new Error(`Parent directory does not exist: ${parent}`);
-    const existing = mockFs.get(safe);
-    mockFs.set(safe, {
-      is_dir: false,
-      content,
-      modified: Date.now(),
-    });
-    if (!existing) logOp("create_file", safe, "success");
-    else logOp("write_file", safe, "success");
+    const rel = toRel(projectRoot, path);
+    await phaosPost("/write", { path: `/${rel}`, content });
+    logOp("write_file", path, "success");
   } catch (e) {
     logOp("write_file", path, "error", String(e));
     throw e;
@@ -222,13 +201,9 @@ export async function createFolder(path: string, projectRoot: string): Promise<v
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    const parent = parentOf(safe);
-    if (!mockFs.has(parent)) throw new Error(`Parent directory does not exist: ${parent}`);
-    if (mockFs.has(safe)) throw new Error("Path already exists");
-    mockFs.set(safe, { is_dir: true, content: "", modified: Date.now() });
-    logOp("create_folder", safe, "success");
+    const rel = toRel(projectRoot, path);
+    await phaosPost("/mkdir", { path: `/${rel}`, content: "" });
+    logOp("create_folder", path, "success");
   } catch (e) {
     logOp("create_folder", path, "error", String(e));
     throw e;
@@ -259,21 +234,10 @@ export async function moveFile(
     }
   }
   try {
-    seed(projectRoot);
-    const src = resolveSafePath(projectRoot, toRel(projectRoot, source));
-    const dst = resolveSafePath(projectRoot, toRel(projectRoot, destination));
-    if (!mockFs.has(src)) throw new Error("Source does not exist");
-    const toMove = [src];
-    mockCollectDescendants(src, toMove);
-    const moved: Array<[string, MockNode]> = [];
-    for (const p of toMove) {
-      const node = mockFs.get(p)!;
-      const rel = p.slice(src.length);
-      moved.push([dst + rel, node]);
-      mockFs.delete(p);
-    }
-    for (const [np, node] of moved) mockFs.set(np, node);
-    logOp("move_file", `${src} -> ${dst}`, "success");
+    const srcRel = toRel(projectRoot, source);
+    const dstRel = toRel(projectRoot, destination);
+    await phaosPost("/rename", { old_path: `/${srcRel}`, new_path: `/${dstRel}` });
+    logOp("move_file", `${source} -> ${destination}`, "success");
   } catch (e) {
     logOp("move_file", `${source} -> ${destination}`, "error", String(e));
     throw e;
@@ -292,13 +256,9 @@ export async function deleteFile(path: string, projectRoot: string): Promise<voi
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    if (!mockFs.has(safe)) throw new Error("Path does not exist");
-    const toDelete = [safe];
-    mockCollectDescendants(safe, toDelete);
-    for (const p of toDelete) mockFs.delete(p);
-    logOp("delete_file", safe, "success");
+    const rel = toRel(projectRoot, path);
+    await phaosDelete({ path: `/${rel}` });
+    logOp("delete_file", path, "success");
   } catch (e) {
     logOp("delete_file", path, "error", String(e));
     throw e;
@@ -321,16 +281,11 @@ export async function uploadFiles(
     }
   }
   try {
-    seed(projectRoot);
-    const safeDir = resolveSafePath(projectRoot, toRel(projectRoot, targetDir));
-    if (!mockFs.has(safeDir) || !mockFs.get(safeDir)!.is_dir) {
-      throw new Error("Target directory does not exist");
-    }
+    const dirRel = toRel(projectRoot, targetDir);
     for (const f of files) {
-      const dest = `${safeDir}/${f.name}`;
-      mockFs.set(dest, { is_dir: false, content: f.content, modified: Date.now() });
+      await phaosPost("/upload", { path: `/${dirRel}`, content: f.content, name: f.name });
     }
-    logOp("upload_files", safeDir, "success", `${files.length} file(s)`);
+    logOp("upload_files", targetDir, "success", `${files.length} file(s)`);
   } catch (e) {
     logOp("upload_files", targetDir, "error", String(e));
     throw e;
@@ -352,18 +307,9 @@ export async function getFileMetadata(
     }
   }
   try {
-    seed(projectRoot);
-    const safe = resolveSafePath(projectRoot, toRel(projectRoot, path));
-    const node = mockFs.get(safe);
-    if (!node) throw new Error("Path does not exist");
-    const meta: FileMetadata = {
-      name: nameOf(safe),
-      path: safe,
-      is_dir: node.is_dir,
-      size: node.is_dir ? 0 : node.content.length,
-      modified: node.modified,
-    };
-    logOp("get_file_metadata", safe, "success");
+    const rel = toRel(projectRoot, path);
+    const meta = await phaosGet<FileMetadata>("/metadata", { path: `/${rel}` });
+    logOp("get_file_metadata", path, "success");
     return meta;
   } catch (e) {
     logOp("get_file_metadata", path, "error", String(e));
