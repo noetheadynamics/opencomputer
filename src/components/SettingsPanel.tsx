@@ -4,6 +4,7 @@ import { Plus, Pencil, Server } from "lucide-react";
 import { Modal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ProviderForm } from "./ProviderForm";
+import { UpdatePanel } from "./settings/UpdatePanel";
 import type { Provider } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 
@@ -118,6 +119,10 @@ export function SettingsPanel({
             </ul>
           )}
         </section>
+
+        <div className="border-t border-oc-surface-border" />
+
+        <UpdatePanel />
 
         <AnimatePresence mode="wait">
           {(adding || editing) && (

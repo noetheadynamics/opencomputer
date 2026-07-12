@@ -82,6 +82,8 @@ pub fn run() {
             db::get_all_app_settings,
             updater::check_for_updates,
             updater::get_current_version,
+            updater::get_platform,
+            updater::download_and_install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running OpenComputer");
