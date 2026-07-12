@@ -53,9 +53,10 @@ export async function commitChanges(
 export async function pushChanges(
   projectRoot: string,
 ): Promise<string> {
+  const status = await getStatus(projectRoot);
   return invoke<string>("git_push", {
     remote: "origin",
-    branch: "current",
+    branch: status.branch,
     project_root: projectRoot,
   });
 }
@@ -63,9 +64,10 @@ export async function pushChanges(
 export async function pullChanges(
   projectRoot: string,
 ): Promise<string> {
+  const status = await getStatus(projectRoot);
   return invoke<string>("git_pull", {
     remote: "origin",
-    branch: "current",
+    branch: status.branch,
     project_root: projectRoot,
   });
 }

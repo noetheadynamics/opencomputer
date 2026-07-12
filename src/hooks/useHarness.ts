@@ -96,24 +96,8 @@ export function useHarness(): UseHarnessReturn {
   }, [refresh]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await listHarnesses();
-        if (!cancelled) {
-          setHarnesses(response.harnesses);
-          setActiveHarnessId(response.active_harness);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load harnesses');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    refresh();
+  }, [refresh]);
 
   return {
     harnesses,
