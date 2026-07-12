@@ -215,7 +215,9 @@ export const SubagentManagerPanel: React.FC = () => {
           ))}
         </div>
       )}
+      </div>
     </motion.div>
+    </div>
   );
 };
 

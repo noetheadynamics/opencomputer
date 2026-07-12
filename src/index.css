@@ -578,3 +578,25 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid rgba(255,255,255,0.06);
 }
+
+/* ================================================================
+   LIGHT MODE — remap hardcoded zinc colors to lighter greys
+   ================================================================ */
+body:not(.dark) .bg-zinc-900 { background-color: #e8e9e7; }
+body:not(.dark) .bg-zinc-800 { background-color: #d8dbd9; }
+body:not(.dark) .bg-zinc-800\/50 { background-color: rgba(216, 219, 217, 0.5); }
+body:not(.dark) .bg-zinc-700 { background-color: #c8cbc9; }
+body:not(.dark) .bg-zinc-600 { background-color: #b0b3b1; }
+body:not(.dark) .text-zinc-100 { color: #16181a; }
+body:not(.dark) .text-zinc-200 { color: #1e2022; }
+body:not(.dark) .text-zinc-300 { color: #2c2f31; }
+body:not(.dark) .text-zinc-400 { color: #5b615d; }
+body:not(.dark) .text-zinc-500 { color: #6b716d; }
+body:not(.dark) .text-zinc-600 { color: #8a908c; }
+body:not(.dark) .text-zinc-500\/hover\:text-zinc-300:hover { color: #2c2f31; }
+body:not(.dark) .hover\:bg-zinc-800:hover { background-color: #d8dbd9; }
+body:not(.dark) .hover\:bg-zinc-700:hover { background-color: #c8cbc9; }
+body:not(.dark) .hover\:text-zinc-200:hover { color: #1e2022; }
+body:not(.dark) .border-zinc-700 { border-color: #c8cbc9; }
+body:not(.dark) .border-zinc-800 { border-color: #d8dbd9; }
+body:not(.dark) .border-zinc-800\/50 { border-color: rgba(216, 219, 217, 0.5); }
