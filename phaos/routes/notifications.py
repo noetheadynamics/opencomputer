@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db.database import get_db
@@ -21,7 +21,7 @@ class NotificationCreate(BaseModel):
 
 
 @router.get("/")
-async def list_notifications(limit: int = 100):
+async def list_notifications(limit: int = Query(100, ge=1, le=1000)):
     db = get_db()
     rows = db.conn.execute(
         "SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?", (limit,)
@@ -48,7 +48,7 @@ async def unread_count():
 
 @router.post("/")
 async def create_notification(req: NotificationCreate):
-    n_id = f"notif-{uuid.uuid4().hex[:8]}"
+    n_id = uuid.uuid4().hex[:8]
     db = get_db()
     db.conn.execute(
         "INSERT INTO notifications (id, title, message, type, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -83,4 +83,12 @@ async def delete_notification(notif_id: str):
     db.conn.commit()
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
+    return {"deleted": True}
+
+
+@router.delete("/")
+async def delete_all_notifications():
+    db = get_db()
+    db.conn.execute("DELETE FROM notifications")
+    db.conn.commit()
     return {"deleted": True}

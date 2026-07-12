@@ -48,7 +48,10 @@ async def av2_status():
     from ..routes.tasks import get_orchestrator
 
     orch = get_orchestrator()
-    return orch.av2.get_status()
+    av2 = getattr(orch, 'av2', None)
+    if av2 is None:
+        return {"enabled": False, "error": "AV2 adapter not initialized"}
+    return av2.get_status()
 
 
 @router.get("/alethea/status")
@@ -57,4 +60,7 @@ async def alethea_status():
     from ..routes.tasks import get_orchestrator
 
     orch = get_orchestrator()
-    return orch.alethea.get_status()
+    alethea = getattr(orch, 'alethea', None)
+    if alethea is None:
+        return {"enabled": False, "error": "Alethea adapter not initialized"}
+    return alethea.get_status()

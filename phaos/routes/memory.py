@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import sqlite3
+import threading
 import zipfile
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -25,19 +26,24 @@ router = APIRouter(tags=["memory"])
 
 _memory_store: Optional[MemoryStore] = None
 _feedback_loop: Optional[FeedbackLoop] = None
+_lock = threading.Lock()
 
 
 def _get_memory_store() -> MemoryStore:
     global _memory_store
     if _memory_store is None:
-        _memory_store = MemoryStore()
+        with _lock:
+            if _memory_store is None:
+                _memory_store = MemoryStore()
     return _memory_store
 
 
 def _get_feedback_loop() -> FeedbackLoop:
     global _feedback_loop
     if _feedback_loop is None:
-        _feedback_loop = FeedbackLoop(_get_memory_store())
+        with _lock:
+            if _feedback_loop is None:
+                _feedback_loop = FeedbackLoop(_get_memory_store())
     return _feedback_loop
 
 
@@ -207,11 +213,11 @@ async def store_interaction(req: StoreInteractionRequest):
 @router.delete("/memory-store/{interaction_id}")
 async def delete_interaction(interaction_id: str):
     ms = _get_memory_store()
-    with sqlite3.connect(ms.db_path) as conn:
-        cursor = conn.execute("DELETE FROM interactions WHERE id = ?", (interaction_id,))
-        conn.commit()
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Interaction not found")
+    conn = ms._get_conn()
+    cursor = conn.execute("DELETE FROM interactions WHERE id = ?", (interaction_id,))
+    conn.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Interaction not found")
     return {"success": True}
 
 
@@ -359,6 +365,8 @@ async def store_message_feedback(message_id: str, req: FeedbackRequest):
 
 @router.get("/search")
 async def search_all(q: str):
+    if not q or not q.strip():
+        raise HTTPException(status_code=400, detail="Search query is required")
     db = get_db()
     ms = _get_memory_store()
 

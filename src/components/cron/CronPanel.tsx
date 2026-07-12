@@ -72,7 +72,7 @@ export function CronPanel() {
             <Clock size={16} className="shrink-0 text-oc-text-secondary" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm text-oc-text-primary">
-                {job.description}
+                {job.name || job.description}
               </p>
               <p className="font-mono text-xs text-oc-text-secondary">
                 {job.schedule}

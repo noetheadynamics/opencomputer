@@ -35,8 +35,18 @@ export async function exportSkills(skillIds: string[]): Promise<Blob> {
 }
 
 export async function importSkills(file: File): Promise<SkillImportResult> {
-  const text = await file.text();
-  const data = JSON.parse(text) as SkillExport;
+  let text: string;
+  try {
+    text = await file.text();
+  } catch (e) {
+    return { imported: 0, belowThreshold: 0, errors: [e instanceof Error ? e.message : "Failed to read file"] };
+  }
+  let data: SkillExport;
+  try {
+    data = JSON.parse(text) as SkillExport;
+  } catch (e) {
+    return { imported: 0, belowThreshold: 0, errors: [e instanceof Error ? e.message : "Invalid JSON"] };
+  }
   const result: SkillImportResult = { imported: 0, belowThreshold: 0, errors: [] };
 
   if (data.version !== 1) {
@@ -46,7 +56,20 @@ export async function importSkills(file: File): Promise<SkillImportResult> {
 
   for (const skill of data.skills) {
     if (skill.score >= 60) {
-      result.imported++;
+      try {
+        const res = await fetch(`${PHAOS_BASE}/api/skills/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(skill),
+        });
+        if (res.ok) {
+          result.imported++;
+        } else {
+          result.errors.push(`Failed to import skill "${skill.name}": HTTP ${res.status}`);
+        }
+      } catch (e) {
+        result.errors.push(`Failed to import skill "${skill.name}": ${e instanceof Error ? e.message : "unknown"}`);
+      }
     } else {
       result.belowThreshold++;
     }
@@ -58,17 +81,25 @@ export async function toggleSkill(
   skillId: string,
   enabled: boolean,
 ): Promise<boolean> {
-  const res = await fetch(`${PHAOS_BASE}/api/skills/${skillId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${PHAOS_BASE}/api/skills/${skillId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteSkill(skillId: string): Promise<boolean> {
-  const res = await fetch(`${PHAOS_BASE}/api/skills/${skillId}`, {
-    method: "DELETE",
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${PHAOS_BASE}/api/skills/${skillId}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

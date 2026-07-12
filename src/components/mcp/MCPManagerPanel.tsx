@@ -31,7 +31,7 @@ export function MCPManagerPanel() {
   const filteredInstalled = servers.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.package.toLowerCase().includes(search.toLowerCase()),
+      (s.package && s.package.toLowerCase().includes(search.toLowerCase())),
   );
 
   const filteredCatalog = catalog.filter(

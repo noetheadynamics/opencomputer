@@ -23,7 +23,11 @@ export const routingApi = {
   },
 
   testModel: async (providerId: string, modelName: string) => {
-    const res = await fetch(`${PHAOS_BASE}/api/routing/test?provider_id=${providerId}&model_name=${modelName}`, {
+    const params = new URLSearchParams({
+      provider_id: providerId,
+      model_name: modelName,
+    });
+    const res = await fetch(`${PHAOS_BASE}/api/routing/test?${params}`, {
       method: 'POST',
     });
     if (!res.ok) throw new Error(`Failed to test model: ${res.statusText}`);

@@ -2,7 +2,7 @@
  * Configure the AI's identity (system prompt).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bot, Save, RotateCcw } from 'lucide-react';
 import { DEFAULT_SYSTEM_PROMPT } from '../../types/conversation';
 
@@ -17,6 +17,11 @@ export const SystemPromptEditor: React.FC<SystemPromptEditorProps> = ({
 }) => {
   const [prompt, setPrompt] = useState(value || DEFAULT_SYSTEM_PROMPT);
   const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    setPrompt(value || DEFAULT_SYSTEM_PROMPT);
+    setHasChanges(false);
+  }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setPrompt(e.target.value);

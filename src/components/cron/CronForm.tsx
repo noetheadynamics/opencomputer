@@ -11,18 +11,31 @@ interface CronFormProps {
 const tapSpring = { type: "spring" as const, stiffness: 700, damping: 20 };
 
 export function CronForm({ onSubmit, onCancel }: CronFormProps) {
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [schedule, setSchedule] = useState("0 * * * *");
   const [enabled, setEnabled] = useState(true);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!description.trim()) return;
-    onSubmit({ description: description.trim(), schedule, enabled });
+    if (!name.trim()) return;
+    onSubmit({ name: name.trim(), description: description.trim(), schedule, enabled });
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3 p-4">
+      <div>
+        <label className="mb-1 block text-xs text-oc-text-secondary">
+          Name
+        </label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Task name"
+          className="oc-glass-input w-full"
+          autoFocus
+        />
+      </div>
       <div>
         <label className="mb-1 block text-xs text-oc-text-secondary">
           Description
@@ -32,7 +45,6 @@ export function CronForm({ onSubmit, onCancel }: CronFormProps) {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What should this task do?"
           className="oc-glass-input w-full"
-          autoFocus
         />
       </div>
       <div>

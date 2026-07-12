@@ -22,8 +22,8 @@ export async function listTaskQueue(): Promise<TaskQueueItem[]> {
       steps: [],
     })) as TaskQueueItem[];
     return _tasks;
-  } catch {
-    throw new Error('Failed to load task queue');
+  } catch (e) {
+    throw new Error(`Failed to load task queue: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

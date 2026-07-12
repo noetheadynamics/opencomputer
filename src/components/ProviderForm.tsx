@@ -32,12 +32,17 @@ export function ProviderForm({ initial, onSave, onDelete }: ProviderFormProps) {
     if (!form.baseUrl || !form.model) return;
     setTesting(true);
     setTest(null);
-    const result = await testConnection({
-      id: initial?.id ?? "preview",
-      ...form,
-    });
-    setTest(result);
-    setTesting(false);
+    try {
+      const result = await testConnection({
+        id: initial?.id ?? "preview",
+        ...form,
+      });
+      setTest(result);
+    } catch (err) {
+      setTest({ ok: false, message: err instanceof Error ? err.message : 'Test failed' });
+    } finally {
+      setTesting(false);
+    }
   }
 
   function submit() {

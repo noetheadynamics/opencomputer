@@ -126,10 +126,13 @@ class PerformanceMonitor:
 
 # Global singleton
 _monitor: Optional[PerformanceMonitor] = None
+_lock = __import__('threading').Lock()
 
 
 def get_performance_monitor() -> PerformanceMonitor:
     global _monitor
     if _monitor is None:
-        _monitor = PerformanceMonitor()
+        with _lock:
+            if _monitor is None:
+                _monitor = PerformanceMonitor()
     return _monitor

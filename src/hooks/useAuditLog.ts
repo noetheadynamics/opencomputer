@@ -5,13 +5,20 @@ import * as auditLib from "@/lib/auditLog";
 export function useAuditLog() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<AuditLogFilters>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await auditLib.listAuditLogs(filters);
-    setEntries(data);
-    setLoading(false);
+    setError(null);
+    try {
+      const data = await auditLib.listAuditLogs(filters);
+      setEntries(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load audit logs");
+    } finally {
+      setLoading(false);
+    }
   }, [filters]);
 
   useEffect(() => {
@@ -26,5 +33,5 @@ export function useAuditLog() {
     return auditLib.exportAuditLogCsv(entries);
   }, [entries]);
 
-  return { entries, loading, filters, updateFilters, refresh, exportCsv };
+  return { entries, loading, error, filters, updateFilters, refresh, exportCsv };
 }

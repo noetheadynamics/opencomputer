@@ -31,8 +31,12 @@ export async function updateCronJob(
 }
 
 export async function deleteCronJob(id: string): Promise<boolean> {
-  const res = await fetch(`${PHAOS_BASE}/api/cron/${id}`, {
-    method: "DELETE",
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${PHAOS_BASE}/api/cron/${id}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

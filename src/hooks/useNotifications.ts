@@ -9,6 +9,8 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(notifLib.getUnreadCount);
 
   useEffect(() => {
+    // Load from backend on mount
+    notifLib.loadNotifications();
     return notifLib.onNotificationsChange(() => {
       setNotifications(notifLib.getNotifications());
       setUnreadCount(notifLib.getUnreadCount());

@@ -4,6 +4,11 @@ import { PHAOS_BASE } from "./config";
 let _serversCache: MCPServer[] | null = null;
 let _catalogCache: MCPCatalogEntry[] | null = null;
 
+function invalidateCaches(): void {
+  _serversCache = null;
+  _catalogCache = null;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${PHAOS_BASE}${path}`, init);
   if (!res.ok) {
@@ -49,6 +54,7 @@ export const mcpApi = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      invalidateCaches();
       return res.id;
     } catch {
       return null;
@@ -62,6 +68,7 @@ export const mcpApi = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      invalidateCaches();
       return true;
     } catch {
       return false;
@@ -71,7 +78,7 @@ export const mcpApi = {
   async deleteServer(id: string): Promise<boolean> {
     try {
       await api(`/api/mcp/servers/${id}`, { method: "DELETE" });
-      _serversCache = (_serversCache ?? []).filter((s) => s.id !== id);
+      invalidateCaches();
       return true;
     } catch {
       return false;
@@ -80,7 +87,9 @@ export const mcpApi = {
 
   async installServer(id: string): Promise<MCPActionResponse> {
     try {
-      return await api<MCPActionResponse>(`/api/mcp/servers/${id}/install`, { method: "POST" });
+      const result = await api<MCPActionResponse>(`/api/mcp/servers/${id}/install`, { method: "POST" });
+      invalidateCaches();
+      return result;
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : "Install failed" };
     }
@@ -88,7 +97,9 @@ export const mcpApi = {
 
   async uninstallServer(id: string): Promise<MCPActionResponse> {
     try {
-      return await api<MCPActionResponse>(`/api/mcp/servers/${id}/uninstall`, { method: "POST" });
+      const result = await api<MCPActionResponse>(`/api/mcp/servers/${id}/uninstall`, { method: "POST" });
+      invalidateCaches();
+      return result;
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : "Uninstall failed" };
     }
@@ -96,7 +107,9 @@ export const mcpApi = {
 
   async startServer(id: string): Promise<MCPActionResponse> {
     try {
-      return await api<MCPActionResponse>(`/api/mcp/servers/${id}/start`, { method: "POST" });
+      const result = await api<MCPActionResponse>(`/api/mcp/servers/${id}/start`, { method: "POST" });
+      invalidateCaches();
+      return result;
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : "Start failed" };
     }
@@ -104,7 +117,9 @@ export const mcpApi = {
 
   async stopServer(id: string): Promise<MCPActionResponse> {
     try {
-      return await api<MCPActionResponse>(`/api/mcp/servers/${id}/stop`, { method: "POST" });
+      const result = await api<MCPActionResponse>(`/api/mcp/servers/${id}/stop`, { method: "POST" });
+      invalidateCaches();
+      return result;
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : "Stop failed" };
     }
@@ -112,7 +127,9 @@ export const mcpApi = {
 
   async restartServer(id: string): Promise<MCPActionResponse> {
     try {
-      return await api<MCPActionResponse>(`/api/mcp/servers/${id}/restart`, { method: "POST" });
+      const result = await api<MCPActionResponse>(`/api/mcp/servers/${id}/restart`, { method: "POST" });
+      invalidateCaches();
+      return result;
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : "Restart failed" };
     }
@@ -121,6 +138,7 @@ export const mcpApi = {
   async enableServer(id: string): Promise<boolean> {
     try {
       await api(`/api/mcp/servers/${id}/enable`, { method: "POST" });
+      invalidateCaches();
       return true;
     } catch {
       return false;
@@ -130,6 +148,7 @@ export const mcpApi = {
   async disableServer(id: string): Promise<boolean> {
     try {
       await api(`/api/mcp/servers/${id}/disable`, { method: "POST" });
+      invalidateCaches();
       return true;
     } catch {
       return false;

@@ -58,7 +58,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  const handleSend = () => {
+  const handleSendRef = useRef<() => void>(() => {});
+  handleSendRef.current = () => {
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
     const sanitized = trimmed.replace(/<[^>]*>/g, '');
@@ -70,9 +71,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const debouncedSend = useCallback(
     debounce(() => {
-      handleSend();
+      handleSendRef.current();
     }, 300),
-    [handleSend]
+    []
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -86,12 +87,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const files = e.target.files;
     if (!files?.length) return;
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const uploaded = await uploadFile(file);
-      setAttachments((prev) => [...prev, { ...uploaded, type: uploaded.type as ChatAttachment['type'] }]);
+    try {
+      for (const file of Array.from(files)) {
+        const uploaded = await uploadFile(file);
+        setAttachments((prev) => [...prev, { ...uploaded, type: uploaded.type as ChatAttachment['type'] }]);
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -99,11 +105,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const files = e.dataTransfer.files;
     if (!files.length) return;
     setUploading(true);
-    for (const file of Array.from(files)) {
-      const uploaded = await uploadFile(file);
-      setAttachments((prev) => [...prev, { ...uploaded, type: uploaded.type as ChatAttachment['type'] }]);
+    try {
+      for (const file of Array.from(files)) {
+        const uploaded = await uploadFile(file);
+        setAttachments((prev) => [...prev, { ...uploaded, type: uploaded.type as ChatAttachment['type'] }]);
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
   }, []);
 
   const handleCommandSelect = (cmd: CommandItem) => {

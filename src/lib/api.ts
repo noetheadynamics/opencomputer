@@ -1,7 +1,7 @@
 import type { Provider } from "./providers";
 import { PHAOS_BASE } from "./config";
 
-export function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): (...args: Parameters<T>) => void {
+export function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): (...args: Parameters<T>) => void {
   let timer: ReturnType<typeof setTimeout>;
   return (...args: Parameters<T>) => {
     clearTimeout(timer);
@@ -34,6 +34,8 @@ export async function testConnection(provider: Provider): Promise<TestResult> {
     if (res.ok) {
       return { ok: true, message: "Connection successful" };
     }
+    // Consume body to allow connection reuse
+    await res.body?.cancel().catch(() => {});
     // Some providers do not expose /models — try a tiny chat completion.
     if (res.status === 401 || res.status === 403) {
       return { ok: false, message: `Auth failed (${res.status})` };
@@ -135,6 +137,19 @@ export async function streamChat(
           }
         } catch {
           // ignore partial/keepalive lines
+        }
+      }
+    }
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith("data:")) {
+        const payload = trimmed.slice(5).trim();
+        if (payload !== "[DONE]") {
+          try {
+            const json = JSON.parse(payload);
+            const delta: string = json.choices?.[0]?.delta?.content ?? "";
+            if (delta) { full += delta; handlers.onToken(delta); }
+          } catch { /* ignore */ }
         }
       }
     }
@@ -241,6 +256,17 @@ export async function streamPhaosChat(
         } catch {
           // ignore partial lines
         }
+      }
+    }
+    if (buffer.trim()) {
+      const trimmed = buffer.trim();
+      if (trimmed.startsWith("data: ")) {
+        const payload = trimmed.slice(6);
+        try {
+          const event = JSON.parse(payload);
+          if (event.token) { full += event.token; handlers.onToken(event.token); }
+          if (event.done) { handlers.onDone(event.full_response || full); return; }
+        } catch { /* ignore */ }
       }
     }
     handlers.onDone(full);

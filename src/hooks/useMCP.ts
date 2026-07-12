@@ -6,13 +6,20 @@ export function useMCP() {
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [catalog, setCatalog] = useState<MCPCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const [s, c] = await Promise.all([mcpApi.getServers(), mcpApi.getCatalog()]);
-    setServers(s);
-    setCatalog(c);
-    setLoading(false);
+    setError(null);
+    try {
+      const [s, c] = await Promise.all([mcpApi.getServers(), mcpApi.getCatalog()]);
+      setServers(s);
+      setCatalog(c);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load MCP data");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -38,17 +45,17 @@ export function useMCP() {
   }, [refresh]);
 
   const toggleServer = useCallback(async (id: string, enabled: boolean) => {
-    if (enabled) {
-      await mcpApi.enableServer(id);
-    } else {
-      await mcpApi.disableServer(id);
+    const ok = enabled ? await mcpApi.enableServer(id) : await mcpApi.disableServer(id);
+    if (ok) {
+      setServers((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
     }
-    setServers((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
   }, []);
 
   const deleteServer = useCallback(async (id: string) => {
-    await mcpApi.deleteServer(id);
-    setServers((prev) => prev.filter((s) => s.id !== id));
+    const ok = await mcpApi.deleteServer(id);
+    if (ok) {
+      setServers((prev) => prev.filter((s) => s.id !== id));
+    }
   }, []);
 
   const startServer = useCallback(async (id: string) => {
@@ -75,6 +82,7 @@ export function useMCP() {
     servers,
     catalog,
     loading,
+    error,
     refresh,
     installFromCatalog,
     createCustom,

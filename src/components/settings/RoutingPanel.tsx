@@ -2,7 +2,7 @@
  * Model Routing Configuration — full UI for task-type to model routing.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Route, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { routingApi } from '../../lib/routing';
@@ -16,6 +16,11 @@ export const RoutingPanel: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [testResult, setTestResult] = useState<{ taskType: string; ok: boolean } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -35,13 +40,20 @@ export const RoutingPanel: React.FC = () => {
   useEffect(() => { loadData(); }, [loadData]);
 
   const updateRule = async (taskType: string, field: string, value: string) => {
-    const existing = rules.find((r) => r.task_type === taskType);
-    const updated = { ...existing, task_type: taskType, [field]: value } as RouteRule;
-    setRules((prev) => prev.map((r) => (r.task_type === taskType ? updated : r)));
+    setRules((prev) => {
+      const existing = prev.find((r) => r.task_type === taskType);
+      if (existing) {
+        return prev.map((r) => (r.task_type === taskType ? { ...r, [field]: value } : r));
+      }
+      return [...prev, { task_type: taskType, provider_id: '', model_name: '', fallback_model_name: '', [field]: value } as unknown as RouteRule];
+    });
     try {
-      await routingApi.updateRule(taskType, updated);
+      const current = rules.find((r) => r.task_type === taskType) || { task_type: taskType, provider_id: '', model_name: '', fallback_model_name: '' };
+      const updated = { ...current, [field]: value };
+      await routingApi.updateRule(taskType, updated as Partial<RouteRule>);
     } catch (err) {
       console.error('Failed to update rule:', err);
+      loadData();
     }
   };
 
@@ -52,7 +64,8 @@ export const RoutingPanel: React.FC = () => {
     } catch {
       setTestResult({ taskType, ok: false });
     }
-    setTimeout(() => setTestResult(null), 2000);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setTestResult(null), 2000);
   };
 
   if (loading) {

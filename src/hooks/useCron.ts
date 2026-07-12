@@ -5,12 +5,19 @@ import * as cronLib from "@/lib/cron";
 export function useCron() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await cronLib.listCronJobs();
-    setJobs(data);
-    setLoading(false);
+    setError(null);
+    try {
+      const data = await cronLib.listCronJobs();
+      setJobs(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load cron jobs");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -24,16 +31,22 @@ export function useCron() {
   }, []);
 
   const toggle = useCallback(async (id: string, enabled: boolean) => {
-    await cronLib.updateCronJob(id, { enabled });
-    setJobs((prev) =>
-      prev.map((j) => (j.id === id ? { ...j, enabled } : j)),
-    );
+    try {
+      await cronLib.updateCronJob(id, { enabled });
+      setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled } : j)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to toggle job");
+    }
   }, []);
 
   const remove = useCallback(async (id: string) => {
-    await cronLib.deleteCronJob(id);
-    setJobs((prev) => prev.filter((j) => j.id !== id));
+    const ok = await cronLib.deleteCronJob(id);
+    if (ok) {
+      setJobs((prev) => prev.filter((j) => j.id !== id));
+    } else {
+      setError("Failed to delete job");
+    }
   }, []);
 
-  return { jobs, loading, refresh, create, toggle, remove };
+  return { jobs, loading, error, refresh, create, toggle, remove };
 }

@@ -2,7 +2,7 @@
  * Merge Strategy Panel — configure merge strategies per task type.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { GitMerge, RefreshCw, CheckCircle, XCircle, Info } from 'lucide-react';
 import { mergingApi } from '../../lib/merging';
@@ -17,13 +17,20 @@ export const MergeStrategyPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [testResult, setTestResult] = useState<{ taskType: string; ok: boolean; result?: string } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   const loadData = useCallback(async () => {
+    let cancelled = false;
     try {
       const [stratData, taskData] = await Promise.all([
         mergingApi.getStrategies(),
         mergingApi.getTaskStrategies(),
       ]);
+      if (cancelled) return;
       setStrategies(stratData.strategies);
       setTaskStrategies(taskData);
 
@@ -36,6 +43,7 @@ export const MergeStrategyPanel: React.FC = () => {
         }
       });
       const scoreResults = await Promise.all(scorePromises);
+      if (cancelled) return;
       const scoreMap: Record<string, StrategyScore[]> = {};
       for (const r of scoreResults) {
         scoreMap[r.taskType] = r.scores;
@@ -44,8 +52,9 @@ export const MergeStrategyPanel: React.FC = () => {
     } catch (err) {
       console.error('Failed to load merge data:', err);
     } finally {
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -74,7 +83,8 @@ export const MergeStrategyPanel: React.FC = () => {
       setTestResult({ taskType, ok: false, result: 'Request failed' });
     }
     setTesting(null);
-    setTimeout(() => setTestResult(null), 3000);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setTestResult(null), 3000);
   };
 
   if (loading) {

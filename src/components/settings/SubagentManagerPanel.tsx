@@ -10,8 +10,8 @@ export const SubagentManagerPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [testQuery, setTestQuery] = useState('');
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testQuery, setTestQuery] = useState<Record<string, string>>({});
+  const [testResult, setTestResult] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const [form, setForm] = useState<SubagentCreateRequest>({
@@ -66,12 +66,13 @@ export const SubagentManagerPanel: React.FC = () => {
   };
 
   const handleTest = async (id: string) => {
-    if (!testQuery.trim()) return;
+    const q = testQuery[id] || '';
+    if (!q.trim()) return;
     try {
-      const result = await subagentApi.test(id, testQuery);
-      setTestResult(result.success ? result.response || 'OK' : result.error || 'Failed');
+      const result = await subagentApi.test(id, q);
+      setTestResult((prev) => ({ ...prev, [id]: result.success ? result.response || 'OK' : result.error || 'Failed' }));
     } catch (e: any) {
-      setTestResult(e.message);
+      setTestResult((prev) => ({ ...prev, [id]: e.message }));
     }
   };
 
@@ -194,8 +195,8 @@ export const SubagentManagerPanel: React.FC = () => {
                         <div className="flex gap-2">
                           <input
                             type="text"
-                            value={testQuery}
-                            onChange={(e) => setTestQuery(e.target.value)}
+                            value={testQuery[sa.id] || ''}
+                            onChange={(e) => setTestQuery((prev) => ({ ...prev, [sa.id]: e.target.value }))}
                             placeholder="Test query..."
                             className="oc-glass-input flex-1 text-xs"
                           />
@@ -203,8 +204,8 @@ export const SubagentManagerPanel: React.FC = () => {
                             <Play size={12} />Test
                           </button>
                         </div>
-                        {testResult && (
-                          <div className="text-xs text-zinc-400 bg-oc-bg/50 rounded p-2">{testResult}</div>
+                        {testResult[sa.id] && (
+                          <div className="text-xs text-zinc-400 bg-oc-bg/50 rounded p-2">{testResult[sa.id]}</div>
                         )}
                       </>
                     )}

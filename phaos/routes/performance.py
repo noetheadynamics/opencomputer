@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from typing import Optional
 
@@ -34,7 +34,7 @@ async def get_session_performance(session_id: str):
 
 
 @router.get("/session/{session_id}/records")
-async def get_session_records(session_id: str, limit: int = 100):
+async def get_session_records(session_id: str, limit: int = Query(100, ge=1, le=1000)):
     pm = get_performance_monitor()
     return pm.get_records(session_id, limit)
 

@@ -18,6 +18,7 @@ export async function listAuditLogs(
     _log = await res.json();
     return _log;
   } catch {
+    if (_log.length > 0) return _log;
     throw new Error('Failed to load audit logs');
   }
 }

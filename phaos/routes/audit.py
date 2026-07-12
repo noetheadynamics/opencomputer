@@ -79,8 +79,8 @@ async def list_audit(
         results.append({
             "id": r["id"],
             "timestamp": r["timestamp"],
-            "action": r["action"],
-            "description": r["action"],
+            "action": r["action"].split(": ", 1)[0] if ": " in r["action"] else r["action"],
+            "description": r["action"].split(": ", 1)[1] if ": " in r["action"] else "",
             "outcome": r["outcome"],
             "taskId": details.get("task_id"),
             "metadata": {k: v for k, v in details.items() if k != "task_id"},

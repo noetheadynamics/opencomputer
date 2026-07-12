@@ -5,14 +5,21 @@ import * as queueLib from "@/lib/taskQueue";
 export function useTaskQueue() {
   const [tasks, setTasks] = useState<TaskQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<TaskQueueItem | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await queueLib.listTaskQueue();
-    setTasks(data);
-    setLoading(false);
+    setError(null);
+    try {
+      const data = await queueLib.listTaskQueue();
+      setTasks(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -23,8 +30,13 @@ export function useTaskQueue() {
 
   const selectTask = useCallback(async (id: string) => {
     setSelectedId(id);
-    const detail = await queueLib.getTaskDetail(id);
-    setSelectedDetail(detail);
+    setSelectedDetail(null);
+    try {
+      const detail = await queueLib.getTaskDetail(id);
+      setSelectedDetail(detail);
+    } catch {
+      setSelectedDetail(null);
+    }
   }, []);
 
   const deselectTask = useCallback(() => {
@@ -47,6 +59,7 @@ export function useTaskQueue() {
   return {
     tasks,
     loading,
+    error,
     selectedId,
     selectedDetail,
     refresh,

@@ -5,12 +5,19 @@ import * as skillsLib from "@/lib/skills";
 export function useSkills() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const data = await skillsLib.listSkills();
-    setSkills(data);
-    setLoading(false);
+    setError(null);
+    try {
+      const data = await skillsLib.listSkills();
+      setSkills(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load skills");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -28,16 +35,22 @@ export function useSkills() {
   }, [refresh]);
 
   const toggleSkill = useCallback(async (id: string, enabled: boolean) => {
-    await skillsLib.toggleSkill(id, enabled);
-    setSkills((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, enabled } : s)),
-    );
+    const ok = await skillsLib.toggleSkill(id, enabled);
+    if (ok) {
+      setSkills((prev) => prev.map((s) => (s.id === id ? { ...s, enabled } : s)));
+    } else {
+      setError("Failed to toggle skill");
+    }
   }, []);
 
   const deleteSkill = useCallback(async (id: string) => {
-    await skillsLib.deleteSkill(id);
-    setSkills((prev) => prev.filter((s) => s.id !== id));
+    const ok = await skillsLib.deleteSkill(id);
+    if (ok) {
+      setSkills((prev) => prev.filter((s) => s.id !== id));
+    } else {
+      setError("Failed to delete skill");
+    }
   }, []);
 
-  return { skills, loading, refresh, exportSkills, importSkills, toggleSkill, deleteSkill };
+  return { skills, loading, error, refresh, exportSkills, importSkills, toggleSkill, deleteSkill };
 }

@@ -36,41 +36,25 @@ async def startup():
         )
     """)
     db.conn.commit()
+    # Initialize optimizer first, then merger with optimizer
+    optimizer = get_merge_optimizer(db.conn)
+    merger = get_model_merger(optimizer=optimizer)
     # Load persisted strategies into merger
     cursor = db.conn.execute("SELECT task_type, strategy FROM merge_strategies")
     for row in cursor.fetchall():
-        merger = get_model_merger()
         merger.task_strategies[row["task_type"]] = row["strategy"]
-    get_merge_optimizer(db.conn)
-    get_model_merger(optimizer=get_merge_optimizer(db.conn))
 
 
 @router.get("/strategies")
 async def get_available_strategies():
-    return {
-        "strategies": [
-            {
-                "id": "simple_average",
-                "name": "Simple Average",
-                "description": "Returns the first (highest priority) model response",
-            },
-            {
-                "id": "sens_merging",
-                "name": "Sens-Merging",
-                "description": "Optimizes merge coefficients based on parameter sensitivity analysis",
-            },
-            {
-                "id": "activation_informed",
-                "name": "Activation-Informed Merging",
-                "description": "Merges based on activation patterns during inference",
-            },
-            {
-                "id": "dynamic",
-                "name": "Dynamic Merging",
-                "description": "Automatically selects the best strategy per task type based on performance",
-            },
-        ]
-    }
+    strategy_list = []
+    for s_id, s_info in STRATEGIES.items():
+        strategy_list.append({
+            "id": s_id,
+            "name": s_info.get("name", s_id),
+            "description": s_info.get("description", ""),
+        })
+    return {"strategies": strategy_list}
 
 
 @router.get("/task-strategies")
@@ -121,10 +105,11 @@ async def test_merge(req: MergeTestRequest):
             "hint": f"Register models with specializations: {list(TASK_TO_MODELS.keys())}",
         }
     try:
+        import asyncio
         callback = merger.merge_for_task(req.task_type, req.query)
         if not callback:
             return {"success": False, "error": f"No merge callback available for task type '{req.task_type}'."}
-        result = callback(req.query)
+        result = await asyncio.to_thread(callback, req.query)
         return {"success": True, "result": result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -132,7 +117,8 @@ async def test_merge(req: MergeTestRequest):
 
 @router.get("/performance/{task_type}")
 async def get_merge_performance(task_type: str):
-    optimizer = get_merge_optimizer()
+    db = get_db()
+    optimizer = get_merge_optimizer(db.conn)
     scores = optimizer.get_all_strategy_scores(task_type)
     records = optimizer.get_merge_records(task_type)
     return {"scores": scores, "records": records}

@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..engine.tool_router import SandboxedExecutor
 
@@ -18,12 +18,15 @@ router = APIRouter()
 
 # Global executor — initialized lazily
 _executor: SandboxedExecutor | None = None
+_executor_lock = __import__('threading').Lock()
 
 
 def get_executor() -> SandboxedExecutor:
     global _executor
     if _executor is None:
-        _executor = SandboxedExecutor()
+        with _executor_lock:
+            if _executor is None:
+                _executor = SandboxedExecutor()
     return _executor
 
 
@@ -36,7 +39,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     provider: dict[str, Any]  # {baseUrl, apiKey, model}
     system_prompt: str | None = None
-    max_iterations: int = 10
+    max_iterations: int = Field(default=10, ge=1, le=50)
 
 
 def _build_tools_payload(executor: SandboxedExecutor) -> list[dict]:
@@ -93,6 +96,10 @@ async def _stream_chat(req: ChatRequest):
     model = req.provider.get("model", "gpt-4o-mini")
     provider_label = req.provider.get("label", "unknown")
 
+    if not base_url:
+        yield f"data: {json.dumps({'error': 'provider.baseUrl is required'})}\n\n"
+        return
+
     # Generate session ID for performance tracking
     import uuid
     session_id = req.provider.get("sessionId", uuid.uuid4().hex[:12])
@@ -104,6 +111,7 @@ async def _stream_chat(req: ChatRequest):
 
     iteration = 0
     full_response = ""
+    start = time.time()
 
     while iteration < req.max_iterations:
         iteration += 1
@@ -129,7 +137,8 @@ async def _stream_chat(req: ChatRequest):
                 ) as resp:
                     if resp.status_code != 200:
                         body = await resp.aread()
-                        yield f"data: {json.dumps({'error': f'Provider returned {resp.status_code}: {body[:200].decode()}'})}\n\n"
+                        body_text = body[:200].decode(errors="replace")
+                        yield f"data: {json.dumps({'error': f'Provider returned {resp.status_code}: {body_text}'})}\n\n"
                         # Record failed call
                         try:
                             from ..core.performance_monitor import get_performance_monitor
@@ -150,8 +159,11 @@ async def _stream_chat(req: ChatRequest):
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = chunk["choices"][0]["delta"]
-                            finish = chunk["choices"][0].get("finish_reason")
+                            try:
+                                delta = chunk["choices"][0]["delta"]
+                                finish = chunk["choices"][0].get("finish_reason")
+                            except (KeyError, IndexError):
+                                continue
 
                             # Content tokens
                             if delta.get("content"):
@@ -184,6 +196,8 @@ async def _stream_chat(req: ChatRequest):
                                 return
 
                             if finish == "tool_calls":
+                                full_response += content_buffer
+                                content_buffer = ""
                                 break
 
                         except json.JSONDecodeError:
@@ -226,14 +240,13 @@ async def _stream_chat(req: ChatRequest):
             result = executor.registry.execute(fn_name, fn_args)
             result_dict = {"success": result.success, "output": result.output, "error": result.error}
 
-            # If tool requires approval, yield that
+            # If tool requires approval, yield that and skip
             if result_dict.get("output", {}).get("status") == "approval_required":
                 yield f"data: {json.dumps({'approval_required': result_dict['output']})}\n\n"
-                # For now, auto-approve in chat mode
-                req_id = result_dict["output"]["request_id"]
-                executor.registry.approve(req_id)
-                result = executor.registry.execute(fn_name, fn_args)
-                result_dict = {"success": result.success, "output": result.output, "error": result.error}
+                result_str = "Tool execution requires user approval. Skipping."
+                tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})
+                yield f"data: {json.dumps({'tool_result': {'id': tc['id'], 'name': fn_name, 'result': result_str}})}\n\n"
+                continue
 
             result_str = _format_tool_result(result_dict)
             tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})

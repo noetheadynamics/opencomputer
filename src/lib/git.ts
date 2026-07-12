@@ -115,7 +115,7 @@ function mockGitUnstage(files: string[]): void {
 
 function mockGitCommit(message: string): CommitResult {
   const repo = getRepo();
-  const hash = Math.random().toString(36).slice(2, 9);
+  const hash = Array.from({ length: 7 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
   const files: string[] = [];
 
   for (const [path, file] of repo.files) {

@@ -100,7 +100,7 @@ function mockExecute(command: string, _projectRoot: string): CommandOutput {
 }
 
 export function getMockHistory(): HistoryEntry[] {
-  return mockHistory;
+  return [...mockHistory];
 }
 
 /* ------------------------------------------------------------------ */
@@ -139,9 +139,13 @@ export async function executeCommand(
   return mockExecute(command, projectRoot);
 }
 
-export function getHistory(): HistoryEntry[] {
+export async function getHistory(): Promise<HistoryEntry[]> {
   if (isTauri()) {
-    return mockHistory; // Tauri history managed server-side
+    try {
+      return await tauriInvoke<HistoryEntry[]>("get_history", {});
+    } catch {
+      return [...mockHistory];
+    }
   }
-  return mockHistory;
+  return [...mockHistory];
 }

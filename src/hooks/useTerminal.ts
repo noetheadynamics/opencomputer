@@ -49,10 +49,11 @@ export function useTerminal(projectRoot: string): UseTerminalReturn {
       }
 
       const output = await executeCommand(trimmed, projectRoot);
+      const history = await getHistory();
 
       setState((prev) => ({
         ...prev,
-        history: getHistory(),
+        history,
       }));
 
       return output;
@@ -67,10 +68,11 @@ export function useTerminal(projectRoot: string): UseTerminalReturn {
     }
 
     const output = await executeCommand(pending, projectRoot);
+    const history = await getHistory();
 
     setState((prev) => ({
       ...prev,
-      history: getHistory(),
+      history,
       currentRisk: null,
       pendingCommand: null,
     }));
@@ -88,7 +90,9 @@ export function useTerminal(projectRoot: string): UseTerminalReturn {
 
   // Load history on mount
   React.useEffect(() => {
-    setState((prev) => ({ ...prev, history: getHistory() }));
+    getHistory().then((history) => {
+      setState((prev) => ({ ...prev, history }));
+    });
   }, []);
 
   return {

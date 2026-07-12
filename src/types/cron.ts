@@ -1,5 +1,6 @@
 export interface CronJob {
   id: string;
+  name: string;
   description: string;
   schedule: string;
   enabled: boolean;
@@ -10,6 +11,7 @@ export interface CronJob {
 }
 
 export interface CronJobCreate {
+  name: string;
   description: string;
   schedule: string;
   enabled: boolean;

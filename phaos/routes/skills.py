@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 from ..db.database import get_db
 from ..db.schemas import Skill, SkillExecuteRequest, SkillExecuteResponse
@@ -20,6 +21,12 @@ class SkillCreate(BaseModel):
     name: str
     description: str
     command: str
+
+    @validator('command')
+    def command_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError('Command cannot be empty')
+        return v
 
 
 class SkillToggle(BaseModel):
@@ -115,11 +122,15 @@ async def execute_skill(req: SkillExecuteRequest):
 
     cmd = row["command"]
     for k, v in req.args.items():
-        cmd = cmd.replace("{" + k + "}", v)
+        cmd = cmd.replace("{" + k + "}", shlex.quote(v))
 
     try:
+        try:
+            cmd_parts = shlex.split(cmd)
+        except ValueError:
+            cmd_parts = [cmd]
         result = subprocess.run(
-            cmd,
+            cmd_parts,
             shell=False,
             capture_output=True,
             text=True,

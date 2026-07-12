@@ -20,7 +20,7 @@ def _safe_path(path: str) -> str:
     """Resolve and validate path against workspace root."""
     root = os.path.realpath(WORKSPACE_ROOT)
     target = os.path.realpath(os.path.join(root, path.lstrip("/")))
-    if not target.startswith(root):
+    if not (target == root or target.startswith(root + os.sep) or target.startswith(root + "/")):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
     return target
 
@@ -93,7 +93,12 @@ async def read_file(path: str):
 @router.post("/write")
 async def write_file(req: WriteFileRequest):
     full = _safe_path(req.path)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
+    parent = os.path.dirname(full)
+    os.makedirs(parent, exist_ok=True)
+    # Verify resolved path is still within workspace after makedirs
+    root = os.path.realpath(WORKSPACE_ROOT)
+    if not os.path.realpath(full).startswith(root + os.sep) and os.path.realpath(full) != root:
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
     try:
         with open(full, "w", encoding="utf-8") as f:
             f.write(req.content)
@@ -131,7 +136,17 @@ async def rename_file(req: RenameRequest):
 
 @router.post("/move")
 async def move_file(req: RenameRequest):
-    return await rename_file(req)
+    old_full = _safe_path(req.old_path)
+    new_full = _safe_path(req.new_path)
+    if not os.path.exists(old_full):
+        raise HTTPException(status_code=404, detail="Source not found")
+    if os.path.exists(new_full):
+        raise HTTPException(status_code=409, detail="Destination already exists")
+    try:
+        shutil.move(old_full, new_full)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("")
@@ -153,11 +168,15 @@ async def delete_file(path: str):
 async def upload_file(req: UploadRequest):
     full_path = _safe_path(req.path)
     full = os.path.join(full_path, req.name)
+    # Validate final path is within workspace
+    root = os.path.realpath(WORKSPACE_ROOT)
+    if not os.path.realpath(full).startswith(root + os.sep) and os.path.realpath(full) != root:
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
     os.makedirs(full_path, exist_ok=True)
     try:
-        with open(full, "w", encoding="utf-8") as f:
-            f.write(req.content)
-        return {"success": True, "path": "/" + os.path.relpath(full, os.path.realpath(WORKSPACE_ROOT)).replace("\\", "/")}
+        with open(full, "wb") as f:
+            f.write(req.content.encode("utf-8") if isinstance(req.content, str) else req.content)
+        return {"success": True, "path": "/" + os.path.relpath(full, root).replace("\\", "/")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

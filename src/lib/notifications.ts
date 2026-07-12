@@ -57,6 +57,7 @@ export function markAllRead(): void {
 export function clearNotifications(): void {
   _notifications = [];
   _notify();
+  fetch(`${PHAOS_BASE}/api/notifications/`, { method: "DELETE" }).catch(() => {});
 }
 
 export async function loadNotifications(): Promise<void> {
@@ -70,7 +71,7 @@ export async function loadNotifications(): Promise<void> {
       title: n.title as string,
       body: n.message as string,
       read: n.read as boolean,
-      timestamp: new Date(n.createdAt as string).getTime(),
+      timestamp: n.createdAt ? new Date(n.createdAt as string).getTime() || Date.now() : Date.now(),
     }));
     _notify();
   } catch {}
@@ -84,5 +85,7 @@ export function onNotificationsChange(fn: () => void): () => void {
 }
 
 function _notify() {
-  _listeners.forEach((l) => l());
+  for (const l of _listeners) {
+    try { l(); } catch { /* swallow */ }
+  }
 }
