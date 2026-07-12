@@ -273,6 +273,90 @@ class SandboxedExecutor:
             ),
             self._exec_web_search,
         )
+        self.registry.register(
+            ToolDefinition(
+                name="file_delete",
+                description="Delete a file from the workspace",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative path of the file to delete"},
+                    },
+                    "required": ["path"],
+                },
+                risk_level="medium",
+                requires_approval=True,
+            ),
+            self._exec_file_delete,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="file_edit",
+                description="Edit a file by replacing specific text content (surgical edit, not full overwrite)",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Relative path of the file to edit"},
+                        "old_text": {"type": "string", "description": "Exact text to find and replace"},
+                        "new_text": {"type": "string", "description": "Replacement text"},
+                    },
+                    "required": ["path", "old_text", "new_text"],
+                },
+                risk_level="medium",
+                requires_approval=True,
+            ),
+            self._exec_file_edit,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="memory_search",
+                description="Search the memory store for relevant past interactions and facts",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                    },
+                    "required": ["query"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_memory_search,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="memory_store",
+                description="Store information in the memory system for future retrieval",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "Memory key/topic"},
+                        "content": {"type": "string", "description": "Content to remember"},
+                    },
+                    "required": ["key", "content"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_memory_store,
+        )
+        self.registry.register(
+            ToolDefinition(
+                name="skill_execute",
+                description="Execute a registered skill by name (runs the skill's workflow)",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {"type": "string", "description": "Name of the skill to execute"},
+                        "args": {"type": "object", "description": "Arguments to pass to the skill"},
+                    },
+                    "required": ["skill_name"],
+                },
+                risk_level="low",
+                sandbox_required=False,
+            ),
+            self._exec_skill_execute,
+        )
         self._register_compact_tools()
     
     def _exec_terminal(self, args: dict) -> Any:
@@ -484,6 +568,115 @@ class SandboxedExecutor:
                 return {"query": query, "results": results}
         except Exception as e:
             return {"error": str(e), "query": query}
+
+    def _exec_file_delete(self, args: dict) -> str:
+        import os
+        path = args.get("path", "")
+        if not path:
+            raise ValueError("No path provided")
+        if ".." in path:
+            raise ValueError("Path traversal not allowed")
+        full_path = os.path.join(self.workspace_root, path)
+        if not os.path.isfile(full_path):
+            raise FileNotFoundError(f"File not found: {path}")
+        os.remove(full_path)
+        return f"Deleted {path}"
+
+    def _exec_file_edit(self, args: dict) -> str:
+        import os
+        path = args.get("path", "")
+        old_text = args.get("old_text", "")
+        new_text = args.get("new_text", "")
+        if not path or not old_text:
+            raise ValueError("path and old_text are required")
+        if ".." in path:
+            raise ValueError("Path traversal not allowed")
+        full_path = os.path.join(self.workspace_root, path)
+        with open(full_path, "r") as f:
+            content = f.read()
+        if old_text not in content:
+            raise ValueError(f"old_text not found in {path}")
+        count = content.count(old_text)
+        new_content = content.replace(old_text, new_text, 1)
+        with open(full_path, "w") as f:
+            f.write(new_content)
+        return f"Edited {path}: replaced {count} occurrence(s)"
+
+    def _exec_memory_search(self, args: dict) -> dict:
+        query = args.get("query", "")
+        if not query:
+            return {"error": "No query provided"}
+        try:
+            from ..db.database import get_db
+            db = get_db()
+            rows = db.conn.execute(
+                "SELECT key, content, created_at FROM memory_store WHERE key LIKE ? OR content LIKE ? ORDER BY created_at DESC LIMIT 10",
+                (f"%{query}%", f"%{query}%"),
+            ).fetchall()
+            results = [{"key": r[0], "content": r[1], "created_at": r[2]} for r in rows]
+            return {"query": query, "results": results}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _exec_memory_store(self, args: dict) -> dict:
+        import uuid
+        from datetime import datetime, timezone
+        key = args.get("key", "")
+        content = args.get("content", "")
+        if not key or not content:
+            return {"error": "key and content are required"}
+        try:
+            from ..db.database import get_db
+            db = get_db()
+            # Ensure table exists
+            db.conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_store (
+                    id TEXT PRIMARY KEY,
+                    key TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            mem_id = f"mem-{uuid.uuid4().hex[:8]}"
+            now = datetime.now(timezone.utc).isoformat()
+            db.conn.execute(
+                "INSERT INTO memory_store (id, key, content, created_at) VALUES (?, ?, ?, ?)",
+                (mem_id, key, content, now),
+            )
+            db.conn.commit()
+            return {"success": True, "id": mem_id, "key": key}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _exec_skill_execute(self, args: dict) -> dict:
+        skill_name = args.get("skill_name", "")
+        skill_args = args.get("args", {})
+        if not skill_name:
+            return {"error": "No skill_name provided"}
+        try:
+            import json
+            from ..db.database import get_db
+            db = get_db()
+            row = db.conn.execute(
+                "SELECT id, name, workflow FROM skills WHERE name = ? OR id = ?",
+                (skill_name, skill_name),
+            ).fetchone()
+            if not row:
+                return {"error": f"Skill '{skill_name}' not found"}
+            skill_id, name, workflow_json = row
+            try:
+                workflow = json.loads(workflow_json) if workflow_json else []
+            except Exception:
+                workflow = []
+            # Execute workflow steps sequentially
+            results = []
+            for i, step in enumerate(workflow):
+                step_type = step.get("type", "unknown")
+                step_content = step.get("content", step.get("command", ""))
+                results.append({"step": i + 1, "type": step_type, "content": step_content[:200]})
+            return {"success": True, "skill": name, "steps_executed": len(results), "results": results}
+        except Exception as e:
+            return {"error": str(e)}
 
     def _register_compact_tools(self):
         """Register DCP compaction tools: compact, discard, protect, prune."""

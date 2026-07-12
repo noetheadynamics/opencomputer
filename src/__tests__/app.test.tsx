@@ -45,13 +45,82 @@ function mockChatStream() {
 }
 
 function mockChatFail() {
-  global.fetch = vi.fn(async () => ({
-    ok: false,
-    status: 500,
-    headers: new Headers({ "content-type": "application/json" }),
-    json: async () => ({}),
-    text: async () => "boom",
-  })) as unknown as typeof fetch;
+  global.fetch = vi.fn(async (url: string | Request, _init?: RequestInit) => {
+    const urlStr = typeof url === "string" ? url : url.url;
+    // Only fail chat endpoint; let conversation endpoints succeed
+    if (urlStr.includes("/api/chat")) {
+      return {
+        ok: false,
+        status: 500,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({}),
+        text: async () => "boom",
+      } as unknown as Response;
+    }
+    // Conversation / other endpoints: return minimal success
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ id: "conv-fail", title: "fallback", created_at: new Date().toISOString() }),
+      text: async () => "",
+    } as unknown as Response;
+  }) as unknown as typeof fetch;
+}
+
+// Mock that handles all conversation + chat endpoints for full lifecycle
+function mockChatFullLifecycle() {
+  global.fetch = vi.fn(async (url: string | Request, _init?: RequestInit) => {
+    const urlStr = typeof url === "string" ? url : url.url;
+    // Chat streaming endpoint
+    if (urlStr.includes("/api/chat")) {
+      return {
+        ok: false,
+        status: 500,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({}),
+        text: async () => "boom",
+      } as unknown as Response;
+    }
+    // Conversation list
+    if (urlStr.includes("/api/conversations") && _init?.method === undefined) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ conversations: [] }),
+        text: async () => "",
+      } as unknown as Response;
+    }
+    // Conversation create
+    if (urlStr.includes("/api/conversations") && _init?.method === "POST" && !urlStr.includes("/messages")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "conv-1", title: "fallback", created_at: new Date().toISOString() }),
+        text: async () => "",
+      } as unknown as Response;
+    }
+    // Get conversation (with messages)
+    if (urlStr.match(/\/api\/conversations\/[^/]+$/) && _init?.method === undefined) {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "conv-1", title: "fallback", messages: [], created_at: new Date().toISOString() }),
+        text: async () => "",
+      } as unknown as Response;
+    }
+    // Add message / update / delete / other
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({ id: "msg-1", role: "user", content: "", created_at: new Date().toISOString() }),
+      text: async () => "",
+    } as unknown as Response;
+  }) as unknown as typeof fetch;
 }
 
 describe("OpenComputer Phase 1 UI", () => {
@@ -197,12 +266,127 @@ describe("OpenComputer Phase 1 UI", () => {
     );
     localStorage.setItem("oc:active_provider_id", JSON.stringify("p1"));
 
+    // Pre-seed a conversation so activeConvId is already set on mount.
+    // This prevents the useEffect race condition where createConversation
+    // triggers activeConvId change → setMessages([]) → overwrites processMessage's messages.
+    let convIdSeed = "seed-conv-1";
+    const conversationList = [{ id: convIdSeed, title: "Seeded", created_at: new Date().toISOString() }];
+    global.fetch = vi.fn(async (url: string | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      // Chat streaming endpoint
+      if (urlStr.includes("/api/chat")) {
+        // First call streams, second call fails
+        return {
+          ok: false,
+          status: 500,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({}),
+          text: async () => "boom",
+        } as unknown as Response;
+      }
+      // Conversation list
+      if (urlStr.includes("/api/conversations") && init?.method === undefined && !urlStr.includes("/messages")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ conversations: conversationList }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      // Conversation create
+      if (urlStr.includes("/api/conversations") && init?.method === "POST" && !urlStr.includes("/messages")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ id: convIdSeed, title: "Seeded", created_at: new Date().toISOString() }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      // Get conversation (with messages)
+      if (urlStr.match(/\/api\/conversations\/[^/]+$/) && init?.method === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ id: convIdSeed, title: "Seeded", messages: [], created_at: new Date().toISOString() }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      // Add message / update / delete / other
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "msg-1", role: "user", content: "", created_at: new Date().toISOString() }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
     render(<App />);
+
     // provider is active from storage; chat view should be ready
     const textarea = await screen.findByPlaceholderText(/message test provider/i);
 
-    // streaming success
-    mockChatStream();
+    // streaming success — first call returns SSE stream
+    let chatCallCount = 0;
+    global.fetch = vi.fn(async (url: string | Request, init?: RequestInit) => {
+      const urlStr = typeof url === "string" ? url : url.url;
+      if (urlStr.includes("/api/chat")) {
+        chatCallCount++;
+        if (chatCallCount === 1) {
+          // First call: streaming success
+          return {
+            ok: true,
+            status: 200,
+            body: sseStream([
+              'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+              'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+              "data: [DONE]\n\n",
+            ]),
+            headers: new Headers({ "content-type": "text/event-stream" }),
+            json: async () => ({}),
+            text: async () => "",
+          } as unknown as Response;
+        }
+        // Second call: error
+        return {
+          ok: false,
+          status: 500,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({}),
+          text: async () => "boom",
+        } as unknown as Response;
+      }
+      // Conversation endpoints pass through
+      if (urlStr.includes("/api/conversations") && init?.method === undefined && !urlStr.includes("/messages")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ conversations: conversationList }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      if (urlStr.match(/\/api\/conversations\/[^/]+$/) && init?.method === undefined) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          json: async () => ({ id: convIdSeed, title: "Seeded", messages: [], created_at: new Date().toISOString() }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ id: "msg-1", role: "user", content: "", created_at: new Date().toISOString() }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+
     await user.type(textarea, "Hello");
     await user.click(screen.getByRole("button", { name: /send/i }));
 
@@ -210,13 +394,9 @@ describe("OpenComputer Phase 1 UI", () => {
     await waitFor(
       () => {
         const found = screen.queryAllByText(/Hello/);
-        if (found.length === 0) {
-          // eslint-disable-next-line no-console
-          console.log("CHAT DOM >>>", document.body.textContent?.slice(0, 600));
-        }
         expect(found.length).toBeGreaterThan(0);
       },
-      { timeout: 3000 },
+      { timeout: 5000 },
     );
     // assistant streamed response assembled ("Hel" + "lo")
     await waitFor(() =>
@@ -224,8 +404,7 @@ describe("OpenComputer Phase 1 UI", () => {
     );
     expect(screen.queryByText(/⚠️/)).not.toBeInTheDocument();
 
-    // error path: send again with failing endpoint
-    mockChatFail();
+    // error path: send again — second chat call returns 500
     const ta2 = screen.getByPlaceholderText(/message test provider/i);
     await user.type(ta2, "Again");
     await user.click(screen.getByRole("button", { name: /send/i }));

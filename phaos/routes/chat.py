@@ -251,7 +251,7 @@ async def _stream_chat(req: ChatRequest):
             result_str = _format_tool_result(result_dict)
             tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})
 
-            yield f"data: {json.dumps({'tool_result': {'id': tc['id'], 'name': fn_name, 'result': result_str[:500]}})}\n\n"
+            yield f"data: {json.dumps({'tool_result': {'id': tc['id'], 'name': fn_name, 'result': result_str[:2000]}})}\n\n"
 
         # Append assistant message with tool calls to history
         assistant_tool_calls = []

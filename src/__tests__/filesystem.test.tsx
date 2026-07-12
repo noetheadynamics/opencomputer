@@ -48,7 +48,12 @@ describe("Phase 2 — File System", () => {
   });
 
   it("CRUD: create folder, write + read file, delete; all logged", async () => {
-    await createFolder("demo", ROOT);
+    // Folder may persist between runs; tolerate "Already exists" error
+    try {
+      await createFolder("demo", ROOT);
+    } catch (e: any) {
+      if (!e?.message?.includes("Already exists")) throw e;
+    }
     await writeFile("demo/hello.txt", "hi there", ROOT);
     const content = await readFile("demo/hello.txt", ROOT);
     expect(content).toBe("hi there");

@@ -1,6 +1,159 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type {
+  GitStatus,
+  FileStatus,
+  Branch,
+  CommitResult,
+} from "@/types/git";
+
+/* ------------------------------------------------------------------ */
+/* In-memory mock git backend                                          */
+/* ------------------------------------------------------------------ */
+
+interface MockFile {
+  content: string;
+  staged: boolean;
+  tracked: boolean;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked";
+}
+
+interface MockBranch {
+  name: string;
+  current: boolean;
+}
+
+interface MockRepo {
+  files: Map<string, MockFile>;
+  branches: MockBranch[];
+  currentBranch: string;
+  commits: Array<{ hash: string; message: string; files: string[] }>;
+}
+
+let _repo: MockRepo = {
+  files: new Map([
+    ["src/main.ts", { content: "console.log('hello')", staged: false, tracked: true, status: "modified" }],
+    ["src/utils.ts", { content: "export const x = 1", staged: false, tracked: true, status: "modified" }],
+    ["README.md", { content: "# OpenComputer", staged: false, tracked: true, status: "modified" }],
+  ]),
+  branches: [
+    { name: "main", current: true },
+    { name: "feature/ui", current: false },
+  ],
+  currentBranch: "main",
+  commits: [],
+};
+
+function resetMockRepo(): void {
+  _repo = {
+    files: new Map([
+      ["src/main.ts", { content: "console.log('hello')", staged: false, tracked: true, status: "modified" }],
+      ["src/utils.ts", { content: "export const x = 1", staged: false, tracked: true, status: "modified" }],
+      ["README.md", { content: "# OpenComputer", staged: false, tracked: true, status: "modified" }],
+    ]),
+    branches: [
+      { name: "main", current: true },
+      { name: "feature/ui", current: false },
+    ],
+    currentBranch: "main",
+    commits: [],
+  };
+}
+
+function mockGitStatus(): GitStatus {
+  const staged: FileStatus[] = [];
+  const unstaged: FileStatus[] = [];
+  const untracked: FileStatus[] = [];
+
+  for (const [path, file] of _repo.files) {
+    if (!file.tracked && !file.staged) {
+      untracked.push({ path, status: "untracked", staged: false });
+    } else if (file.staged) {
+      staged.push({ path, status: file.status, staged: true });
+    } else if (file.status === "modified") {
+      unstaged.push({ path, status: "modified", staged: false });
+    }
+  }
+
+  return {
+    branch: _repo.currentBranch,
+    staged,
+    unstaged,
+    untracked,
+    ahead: 0,
+    behind: 0,
+    isRepo: true,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Mock the git module                                                 */
+/* ------------------------------------------------------------------ */
+
+vi.mock("@/lib/git", () => ({
+  getStatus: vi.fn(async () => mockGitStatus()),
+  stageFiles: vi.fn(async (files: string[]) => {
+    if (files.length === 0) {
+      for (const [, file] of _repo.files) {
+        if (file.tracked && !file.staged) file.staged = true;
+      }
+    } else {
+      for (const path of files) {
+        const file = _repo.files.get(path);
+        if (file) file.staged = true;
+      }
+    }
+  }),
+  unstageFiles: vi.fn(async (files: string[]) => {
+    for (const path of files) {
+      const file = _repo.files.get(path);
+      if (file) file.staged = false;
+    }
+  }),
+  commitChanges: vi.fn(async (message: string) => {
+    const hash = Array.from({ length: 7 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+    const committedFiles: string[] = [];
+    for (const [path, file] of _repo.files) {
+      if (file.staged) {
+        file.tracked = true;
+        file.staged = false;
+        file.status = "modified";
+        committedFiles.push(path);
+      }
+    }
+    _repo.commits.push({ hash, message, files: committedFiles });
+    return { hash, message };
+  }),
+  pushChanges: vi.fn(async () => `Pushed to origin/${_repo.currentBranch}`),
+  pullChanges: vi.fn(async () => `Pulled from origin/${_repo.currentBranch}`),
+  getBranches: vi.fn(async () =>
+    _repo.branches.map((b) => ({ name: b.name, current: b.current })),
+  ),
+  createBranch: vi.fn(async (name: string) => {
+    if (_repo.branches.some((b) => b.name === name)) {
+      throw new Error(`Branch '${name}' already exists`);
+    }
+    _repo.branches.push({ name, current: false });
+  }),
+  switchBranch: vi.fn(async (name: string) => {
+    const branch = _repo.branches.find((b) => b.name === name);
+    if (!branch) throw new Error(`Branch '${name}' not found`);
+    _repo.branches.forEach((b) => (b.current = b.name === name));
+    _repo.currentBranch = name;
+  }),
+  deleteBranch: vi.fn(async (name: string) => {
+    if (name === _repo.currentBranch) throw new Error("Cannot delete the current branch");
+    const idx = _repo.branches.findIndex((b) => b.name === name);
+    if (idx === -1) throw new Error(`Branch '${name}' not found`);
+    _repo.branches.splice(idx, 1);
+  }),
+  getFileDiff: vi.fn(async (filePath: string) => {
+    const file = _repo.files.get(filePath);
+    return { filePath, diff: file ? `diff --git a/${filePath} b/${filePath}\n${file.content}` : "" };
+  }),
+}));
+
 import {
   getStatus,
   stageFiles,
@@ -10,22 +163,20 @@ import {
   createBranch,
   switchBranch,
   deleteBranch,
-  resetMockGit,
 } from "@/lib/git";
 import { StatusView } from "@/components/git/StatusView";
 import { GitPanel } from "@/components/git/GitPanel";
 import { GitConfirmationDialog } from "@/components/git/GitConfirmationDialog";
 import { BranchManager } from "@/components/git/BranchManager";
-import type { GitStatus } from "@/types/git";
 
 describe("Phase 4 — Git", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetMockGit();
+    resetMockRepo();
     vi.restoreAllMocks();
   });
 
-  it("getStatus: returns initial mock repo status", async () => {
+  it("getStatus: returns initial repo status", async () => {
     const status = await getStatus("/mock");
     expect(status.isRepo).toBe(true);
     expect(status.branch).toBe("main");
@@ -167,7 +318,6 @@ describe("Phase 4 — Git", () => {
   it("GitPanel: renders with Git header and branch info", async () => {
     render(<GitPanel projectRoot="/mock" />);
     expect(await screen.findByText("Git")).toBeInTheDocument();
-    // Should show branch badge (branch name appears in multiple places)
     await waitFor(() => {
       expect(screen.getAllByText("main").length).toBeGreaterThanOrEqual(1);
     });

@@ -175,6 +175,7 @@ export interface PhaosStreamHandlers {
   onToken: (delta: string) => void;
   onToolCall: (call: ToolCallInfo) => void;
   onToolResult: (result: ToolResultInfo) => void;
+  onApproval: (data: Record<string, unknown>) => void;
   onDone: (full: string) => void;
   onError: (message: string) => void;
 }
@@ -244,6 +245,9 @@ export async function streamPhaosChat(
           }
           if (event.tool_result) {
             handlers.onToolResult(event.tool_result);
+          }
+          if (event.approval_required) {
+            handlers.onApproval(event.approval_required);
           }
           if (event.error) {
             handlers.onError(event.error);

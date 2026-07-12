@@ -89,6 +89,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [showSidebar, setShowSidebar] = React.useState(false);
+  const [expandedToolCalls, setExpandedToolCalls] = React.useState<Set<string>>(new Set());
   const abortRef = React.useRef<AbortController | null>(null);
   const queueRef = React.useRef<{ text: string; convId: string; attachments: ChatAttachment[]; replyTo: UIMessage | null }[]>([]);
 
@@ -122,18 +123,21 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   React.useEffect(() => {
     if (activeConvId) {
       loadingConvIdRef.current = activeConvId;
-      setMessages([]);
+      const snapshotLen = messages.length;
       loadMessages(activeConvId).then((msgs) => {
         // Only apply if we haven't switched to a different conversation
         if (loadingConvIdRef.current !== activeConvId) return;
-        const uiMsgs: UIMessage[] = msgs.map((m) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          timestamp: new Date(m.created_at).getTime(),
-          saved: true,
-        }));
-        setMessages(uiMsgs);
+        // If processMessage has added messages since load started, don't overwrite them
+        setMessages((current) => {
+          if (current.length > snapshotLen) return current;
+          return msgs.map((m) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            timestamp: new Date(m.created_at).getTime(),
+            saved: true,
+          }));
+        });
       });
     } else {
       loadingConvIdRef.current = null;
@@ -365,6 +369,13 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               msg.toolCall?.id === result.id ? { ...msg, toolResult: result } : msg,
             ),
           ),
+        onApproval: (data) => {
+          // Show approval request as a notification-style message
+          setMessages((m) => [
+            ...m,
+            { id: uid(), role: "assistant" as const, content: `⚠️ Approval required: ${JSON.stringify(data.tool_name || data)}`, timestamp: Date.now() },
+          ]);
+        },
         onDone: async (fullResponse) => {
           setMessages((m) =>
             m.map((msg) =>
@@ -575,16 +586,36 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               {msg.role === "tool" && msg.toolCall ? (
                 <div className="flex items-start gap-2 pl-9">
                   <div className="oc-glass-3d max-w-[80%] rounded-xl px-3 py-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-oc-accent">
+                    <div
+                      className="flex items-center gap-1.5 text-oc-accent cursor-pointer select-none"
+                      onClick={() => {
+                        setExpandedToolCalls((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(msg.id)) next.delete(msg.id);
+                          else next.add(msg.id);
+                          return next;
+                        });
+                      }}
+                    >
                       <Wrench size={12} />
                       <span className="font-medium">{msg.toolCall.name}</span>
                       {!msg.toolResult && (
                         <span className="animate-pulse text-oc-text-secondary">…</span>
                       )}
+                      <span className="ml-1 text-oc-text-secondary">
+                        {expandedToolCalls.has(msg.id) ? "▾" : "▸"}
+                      </span>
                     </div>
+                    {expandedToolCalls.has(msg.id) && msg.toolCall.args && Object.keys(msg.toolCall.args).length > 0 && (
+                      <pre className="mt-1 max-h-24 overflow-auto text-oc-text-secondary/70 whitespace-pre-wrap text-[10px]">
+                        {JSON.stringify(msg.toolCall.args, null, 2)}
+                      </pre>
+                    )}
                     {msg.toolResult && (
-                      <pre className="mt-1 max-h-32 overflow-auto text-oc-text-secondary whitespace-pre-wrap">
-                        {msg.toolResult.result.slice(0, 300)}
+                      <pre className="mt-1 max-h-48 overflow-auto text-oc-text-secondary whitespace-pre-wrap">
+                        {expandedToolCalls.has(msg.id)
+                          ? msg.toolResult.result.slice(0, 1000)
+                          : msg.toolResult.result.slice(0, 150)}
                       </pre>
                     )}
                   </div>

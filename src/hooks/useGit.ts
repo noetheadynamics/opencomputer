@@ -11,7 +11,6 @@ import {
   switchBranch,
   deleteBranch,
   getFileDiff,
-  resetMockGit,
 } from "@/lib/git";
 import type { GitStatus, Branch, CommitResult, DiffResult } from "@/types/git";
 
@@ -58,7 +57,6 @@ interface UseGitReturn {
   deleteBranch: (name: string) => Promise<void>;
   viewDiff: (filePath: string) => Promise<void>;
   clearDiff: () => void;
-  resetMock: () => void;
 }
 
 export function useGit(projectRoot: string): UseGitReturn {
@@ -251,20 +249,6 @@ export function useGit(projectRoot: string): UseGitReturn {
     setState((prev) => ({ ...prev, diffResult: null }));
   }, []);
 
-  const resetMock = React.useCallback(() => {
-    resetMockGit();
-    setState({
-      status: EMPTY_STATUS,
-      branches: [],
-      loading: false,
-      error: null,
-      pushing: false,
-      pulling: false,
-      committing: false,
-      diffResult: null,
-    });
-  }, []);
-
   // Load on mount
   React.useEffect(() => {
     refresh();
@@ -292,6 +276,5 @@ export function useGit(projectRoot: string): UseGitReturn {
     deleteBranch: handleDeleteBranch,
     viewDiff,
     clearDiff,
-    resetMock,
   };
 }

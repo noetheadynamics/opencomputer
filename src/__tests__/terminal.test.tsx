@@ -3,6 +3,40 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { classifyRisk, executeCommand, requiresConfirmation } from "@/lib/terminal";
 import { RiskConfirmationDialog } from "@/components/terminal/RiskConfirmationDialog";
+
+vi.mock("@/components/terminal/TerminalEmulator", () => ({
+  TerminalEmulator: ({
+    onExecute,
+    outputLines,
+  }: {
+    onExecute: (cmd: string) => void;
+    outputLines: string[];
+  }) => {
+    const [value, setValue] = React.useState("");
+    return (
+      <div data-testid="terminal-emulator">
+        <div data-testid="terminal-output">
+          {outputLines.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+        <input
+          placeholder="Type a command..."
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onExecute(value);
+              setValue("");
+            }
+          }}
+        />
+      </div>
+    );
+  },
+}));
+
+import * as React from "react";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 
 describe("Phase 3 — Terminal", () => {
@@ -44,16 +78,16 @@ describe("Phase 3 — Terminal", () => {
     expect(requiresConfirmation({ level: "low", reason: "test" })).toBe(false);
   });
 
-  it("executeCommand: safe commands return mock output", async () => {
+  it("executeCommand: returns exit code 127 when not in Tauri", async () => {
     const result = await executeCommand("echo hello", "/test");
-    expect(result.stdout).toBe("hello");
-    expect(result.exit_code).toBe(0);
+    expect(result.exit_code).toBe(127);
+    expect(result.stderr).toContain("native environment");
   });
 
   it("executeCommand: unknown commands return exit code 127", async () => {
     const result = await executeCommand("nonexistentcmd", "/test");
     expect(result.exit_code).toBe(127);
-    expect(result.stderr).toContain("Command not found");
+    expect(result.stderr).toContain("native environment");
   });
 
   it("RiskConfirmationDialog: shows and fires callbacks", async () => {
@@ -100,11 +134,13 @@ describe("Phase 3 — Terminal", () => {
     await user.type(input, "echo hello world");
     await user.keyboard("{Enter}");
 
+    // Command echo line appears
     await waitFor(() => {
       expect(screen.getByText("$ echo hello world")).toBeInTheDocument();
     });
+    // Non-Tauri environment shows native error
     await waitFor(() => {
-      expect(screen.getByText("hello world")).toBeInTheDocument();
+      expect(screen.getByText(/native environment/)).toBeInTheDocument();
     });
   });
 

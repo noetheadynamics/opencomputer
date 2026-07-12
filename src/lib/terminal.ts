@@ -63,47 +63,6 @@ export function requiresConfirmation(risk: RiskAssessment): boolean {
 }
 
 /* ------------------------------------------------------------------ */
-/* Browser mock (runs commands locally in-browser for testing)         */
-/* ------------------------------------------------------------------ */
-
-const mockHistory: HistoryEntry[] = [];
-
-function mockExecute(command: string, _projectRoot: string): CommandOutput {
-  const parts = command.trim().split(/\s+/);
-  const bin = parts[0] ?? "";
-
-  if (bin === "echo") {
-    const stdout = parts.slice(1).join(" ");
-    mockHistory.push({ command, output: stdout, timestamp: Date.now() });
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  if (bin === "pwd") {
-    mockHistory.push({ command, output: _projectRoot, timestamp: Date.now() });
-    return { stdout: _projectRoot, stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  if (bin === "date") {
-    const stdout = new Date().toString();
-    mockHistory.push({ command, output: stdout, timestamp: Date.now() });
-    return { stdout, stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  if (bin === "whoami") {
-    mockHistory.push({ command, output: "opencomputer-user", timestamp: Date.now() });
-    return { stdout: "opencomputer-user", stderr: "", exit_code: 0, timed_out: false };
-  }
-
-  const stderr = `Command not available in browser mode: ${bin}`;
-  mockHistory.push({ command, output: stderr, timestamp: Date.now() });
-  return { stdout: "", stderr, exit_code: 127, timed_out: false };
-}
-
-export function getMockHistory(): HistoryEntry[] {
-  return [...mockHistory];
-}
-
-/* ------------------------------------------------------------------ */
 /* Tauri invoke wrapper                                               */
 /* ------------------------------------------------------------------ */
 
@@ -136,7 +95,12 @@ export async function executeCommand(
     }
   }
 
-  return mockExecute(command, projectRoot);
+  return {
+    stdout: "",
+    stderr: `Terminal requires a native environment (Tauri). Command: ${command}`,
+    exit_code: 127,
+    timed_out: false,
+  };
 }
 
 export async function getHistory(): Promise<HistoryEntry[]> {
@@ -144,8 +108,8 @@ export async function getHistory(): Promise<HistoryEntry[]> {
     try {
       return await tauriInvoke<HistoryEntry[]>("get_history", {});
     } catch {
-      return [...mockHistory];
+      return [];
     }
   }
-  return [...mockHistory];
+  return [];
 }
