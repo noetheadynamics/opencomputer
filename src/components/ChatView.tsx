@@ -92,6 +92,8 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const [expandedToolCalls, setExpandedToolCalls] = React.useState<Set<string>>(new Set());
   const abortRef = React.useRef<AbortController | null>(null);
   const queueRef = React.useRef<{ text: string; convId: string; attachments: ChatAttachment[]; replyTo: UIMessage | null }[]>([]);
+  const messagesRef = React.useRef<UIMessage[]>([]);
+  const [queueLength, setQueueLength] = React.useState(0);
 
   // Conversation persistence
   const {
@@ -148,8 +150,12 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   React.useEffect(() => {
     scrollRef.current?.scrollTo?.({
       top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
     });
+  }, [messages]);
+
+  // Keep messagesRef in sync so processMessage can read current messages without depending on state
+  React.useEffect(() => {
+    messagesRef.current = messages;
   }, [messages]);
 
   React.useEffect(() => {
@@ -163,6 +169,15 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Cleanup on unmount — abort any in-flight stream
+  React.useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      queueRef.current = [];
+      setQueueLength(0);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (input.startsWith("/") && input.length < 20) {
       setShowCommandPalette(true);
@@ -171,6 +186,15 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
       setShowCommandPalette(false);
     }
   }, [input]);
+
+  // Revoke object URLs on unmount to prevent memory leaks
+  React.useEffect(() => {
+    return () => {
+      attachments.forEach((a) => {
+        if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
+      });
+    };
+  }, []);
 
   // Save a message to the backend — takes convId to avoid stale closure
   const persistMessage = React.useCallback(
@@ -339,7 +363,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     await persistMessage(convId, "user", text);
 
     const history: ChatMessage[] = [
-      ...messages
+      ...messagesRef.current
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user" as const, content: text },
@@ -387,6 +411,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
           }
           // Process queue
           const next = queueRef.current.shift();
+          setQueueLength(queueRef.current.length);
           if (next) {
             processMessage(next.text, next.convId, next.attachments, next.replyTo);
           } else {
@@ -403,6 +428,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
           );
           // Process queue even on error
           const next = queueRef.current.shift();
+          setQueueLength(queueRef.current.length);
           if (next) {
             processMessage(next.text, next.convId, next.attachments, next.replyTo);
           } else {
@@ -414,7 +440,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
       controller.signal,
     );
     abortRef.current = null;
-  }, [provider, messages, persistMessage, systemPrompt]);
+  }, [provider, persistMessage, systemPrompt]);
 
   const send = React.useCallback(async () => {
     const text = input.trim();
@@ -440,6 +466,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     if (busy) {
       // Queue the message
       queueRef.current.push({ text, convId, attachments: currentAttachments, replyTo: currentReplyTo });
+      setQueueLength(queueRef.current.length);
       setAttachments([]);
       return;
     }
@@ -454,6 +481,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
       abortRef.current = null;
     }
     queueRef.current = [];
+    setQueueLength(0);
     setBusy(false);
   }
 
@@ -776,7 +804,11 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
               <AttachmentPreview
                 key={a.id}
                 file={a}
-                onRemove={(id) => setAttachments((prev) => prev.filter((x) => x.id !== id))}
+                onRemove={(id) => {
+                  const removed = attachments.find((x) => x.id === id);
+                  if (removed?.url?.startsWith("blob:")) URL.revokeObjectURL(removed.url);
+                  setAttachments((prev) => prev.filter((x) => x.id !== id));
+                }}
               />
             ))}
           </div>
@@ -784,10 +816,10 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
 
         <FormattingToolbar onFormat={handleFormat} />
 
-        {queueRef.current.length > 0 && (
+        {queueLength > 0 && (
           <div className="mb-2 flex items-center gap-2 text-xs text-oc-text-secondary">
             <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-oc-accent" />
-            {queueRef.current.length} message{queueRef.current.length > 1 ? "s" : ""} queued
+            {queueLength} message{queueLength > 1 ? "s" : ""} queued
           </div>
         )}
 

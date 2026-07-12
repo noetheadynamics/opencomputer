@@ -11,10 +11,14 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     getLinkPreview(url).then((data) => {
-      setPreview(data);
-      setLoading(false);
+      if (!cancelled) {
+        setPreview(data);
+        setLoading(false);
+      }
     });
+    return () => { cancelled = true; };
   }, [url]);
 
   if (loading) {

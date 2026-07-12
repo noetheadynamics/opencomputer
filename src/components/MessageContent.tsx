@@ -171,7 +171,7 @@ function renderMarkdown(raw: string): React.ReactNode[] {
   return elements;
 }
 
-export function MessageContent({ content }: MessageContentProps) {
+export const MessageContent = React.memo(function MessageContent({ content }: MessageContentProps) {
   if (!content) return null;
   return <div className="space-y-1">{renderMarkdown(content)}</div>;
-}
+});
