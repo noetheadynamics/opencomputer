@@ -91,6 +91,11 @@ async def _stream_chat(req: ChatRequest):
     base_url = req.provider.get("baseUrl", "").rstrip("/")
     api_key = req.provider.get("apiKey", "")
     model = req.provider.get("model", "gpt-4o-mini")
+    provider_label = req.provider.get("label", "unknown")
+
+    # Generate session ID for performance tracking
+    import uuid
+    session_id = req.provider.get("sessionId", uuid.uuid4().hex[:12])
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -125,6 +130,13 @@ async def _stream_chat(req: ChatRequest):
                     if resp.status_code != 200:
                         body = await resp.aread()
                         yield f"data: {json.dumps({'error': f'Provider returned {resp.status_code}: {body[:200].decode()}'})}\n\n"
+                        # Record failed call
+                        try:
+                            from ..core.performance_monitor import get_performance_monitor
+                            pm = get_performance_monitor()
+                            pm.record_call(session_id, provider_label, model, "general", 0, 0, int((time.time() - start) * 1000), False)
+                        except Exception:
+                            pass
                         return
 
                     tool_calls_buffer: dict[int, dict] = {}
@@ -188,6 +200,13 @@ async def _stream_chat(req: ChatRequest):
         if not tool_calls_buffer:
             full_response += content_buffer
             yield f"data: {json.dumps({'done': True, 'full_response': full_response})}\n\n"
+            # Record performance stats
+            try:
+                from ..core.performance_monitor import get_performance_monitor
+                pm = get_performance_monitor()
+                pm.record_call(session_id, provider_label, model, "general", 0, len(full_response), int((time.time() - start) * 1000), True)
+            except Exception:
+                pass
             return
 
         # Execute tool calls
@@ -239,6 +258,14 @@ async def _stream_chat(req: ChatRequest):
         # Loop continues for next iteration
 
     yield f"data: {json.dumps({'done': True, 'full_response': full_response, 'warning': f'Max iterations ({req.max_iterations}) reached'})}\n\n"
+
+    # Record performance stats
+    try:
+        from ..core.performance_monitor import get_performance_monitor
+        pm = get_performance_monitor()
+        pm.record_call(session_id, provider_label, model, "general", 0, len(full_response), int((time.time() - start) * 1000), True)
+    except Exception:
+        pass
 
 
 @router.post("")

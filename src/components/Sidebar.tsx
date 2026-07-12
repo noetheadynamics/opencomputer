@@ -20,7 +20,6 @@ import {
   Route,
   Layers,
   Keyboard,
-  Loader,
   Wrench,
   FileText,
   type LucideIcon,
@@ -46,7 +45,6 @@ export type ViewKey =
   | "routing"
   | "merging"
   | "shortcuts"
-  | "background"
   | "harness"
   | "prompt"
   | "settings";
@@ -67,7 +65,6 @@ const NAV_ITEMS: NavItem[] = [
   { key: "skills", label: "Skills", icon: Blocks },
   { key: "cron", label: "Schedule", icon: Clock },
   { key: "queue", label: "Tasks", icon: List },
-  { key: "background", label: "Background", icon: Loader },
   { key: "audit", label: "Audit", icon: Shield },
   { key: "memory", label: "Memory", icon: Brain },
   { key: "subagents", label: "Subagents", icon: Bot },

@@ -79,17 +79,20 @@ export const MergeStrategyPanel: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="oc-glass-panel p-6">
-        <div className="text-center text-zinc-500 text-sm py-8">Loading...</div>
+      <div className="flex h-full flex-col p-4">
+        <div className="oc-glass-panel p-6">
+          <div className="text-center text-zinc-500 text-sm py-8">Loading...</div>
+        </div>
       </div>
     );
   }
 
   return (
+    <div className="flex h-full flex-col p-4">
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="oc-glass-panel p-6 space-y-4"
+      className="flex flex-col flex-1 min-h-0 space-y-4"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -101,7 +104,7 @@ export const MergeStrategyPanel: React.FC = () => {
         </button>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-zinc-500 border-b border-zinc-800">
@@ -178,5 +181,6 @@ export const MergeStrategyPanel: React.FC = () => {
         </div>
       </div>
     </motion.div>
+    </div>
   );
 };

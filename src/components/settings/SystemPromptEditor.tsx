@@ -34,7 +34,8 @@ export const SystemPromptEditor: React.FC<SystemPromptEditorProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full flex-col p-4">
+    <div className="flex flex-col flex-1 min-h-0 space-y-4">
       <div className="flex items-center gap-2">
         <Bot className="w-5 h-5 text-emerald-400" />
         <h3 className="text-sm font-medium text-zinc-100">AI Identity (System Prompt)</h3>
@@ -48,7 +49,7 @@ export const SystemPromptEditor: React.FC<SystemPromptEditorProps> = ({
       <textarea
         value={prompt}
         onChange={handleChange}
-        className="w-full h-64 px-3 py-2 text-sm bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-100 resize-none font-mono focus:outline-none focus:border-emerald-500/50"
+        className="w-full flex-1 min-h-[200px] px-3 py-2 text-sm bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-100 resize-none font-mono focus:outline-none focus:border-emerald-500/50"
       />
 
       <div className="flex items-center gap-2">
@@ -72,6 +73,7 @@ export const SystemPromptEditor: React.FC<SystemPromptEditorProps> = ({
           Reset to Default
         </button>
       </div>
+    </div>
     </div>
   );
 };

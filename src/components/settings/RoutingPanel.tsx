@@ -56,23 +56,24 @@ export const RoutingPanel: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="oc-glass-panel p-6"><div className="text-center text-zinc-500 text-sm py-8">Loading...</div></div>;
+    return <div className="flex h-full flex-col p-4"><div className="oc-glass-panel p-6"><div className="text-center text-zinc-500 text-sm py-8">Loading...</div></div></div>;
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="oc-glass-panel p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Route className="w-5 h-5 text-emerald-400" />
-          <h2 className="text-lg font-semibold text-zinc-100">Model Routing</h2>
+    <div className="flex h-full flex-col p-4">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col flex-1 min-h-0 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Route className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-lg font-semibold text-zinc-100">Model Routing</h2>
+          </div>
+          <button onClick={loadData} className="oc-glass-btn p-2" title="Refresh">
+            <RefreshCw className="w-4 h-4 text-zinc-400" />
+          </button>
         </div>
-        <button onClick={loadData} className="oc-glass-btn p-2" title="Refresh">
-          <RefreshCw className="w-4 h-4 text-zinc-400" />
-        </button>
-      </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <div className="flex-1 overflow-y-auto overflow-x-auto">
+          <table className="w-full text-sm">
           <thead>
             <tr className="text-zinc-500 border-b border-zinc-800">
               <th className="text-left py-2 pr-4">Task Type</th>
@@ -133,8 +134,9 @@ export const RoutingPanel: React.FC = () => {
               );
             })}
           </tbody>
-        </table>
-      </div>
-    </motion.div>
+          </table>
+        </div>
+      </motion.div>
+    </div>
   );
 };

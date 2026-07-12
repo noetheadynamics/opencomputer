@@ -96,7 +96,8 @@ export const SubagentManagerPanel: React.FC = () => {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="oc-glass-panel p-6 space-y-4">
+    <div className="flex h-full flex-col p-4">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col flex-1 min-h-0 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-oc-accent" />
@@ -129,6 +130,7 @@ export const SubagentManagerPanel: React.FC = () => {
       </AnimatePresence>
 
       {/* Subagent list */}
+      <div className="flex-1 overflow-y-auto">
       {loading ? (
         <div className="text-center text-zinc-500 text-sm py-8">Loading...</div>
       ) : subagents.length === 0 ? (

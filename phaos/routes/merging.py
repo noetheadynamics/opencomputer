@@ -27,6 +27,20 @@ class MergeTestRequest(BaseModel):
 @router.on_event("startup")
 async def startup():
     db = get_db()
+    # Create merge_strategies table for persistence
+    db.conn.execute("""
+        CREATE TABLE IF NOT EXISTS merge_strategies (
+            task_type TEXT PRIMARY KEY,
+            strategy TEXT NOT NULL DEFAULT 'default',
+            updated_at TEXT NOT NULL
+        )
+    """)
+    db.conn.commit()
+    # Load persisted strategies into merger
+    cursor = db.conn.execute("SELECT task_type, strategy FROM merge_strategies")
+    for row in cursor.fetchall():
+        merger = get_model_merger()
+        merger.task_strategies[row["task_type"]] = row["strategy"]
     get_merge_optimizer(db.conn)
     get_model_merger(optimizer=get_merge_optimizer(db.conn))
 
@@ -77,16 +91,39 @@ async def set_task_strategy(req: MergeStrategyRequest):
         raise HTTPException(status_code=400, detail=f"Invalid strategy: {req.strategy}")
     merger = get_model_merger()
     merger.set_strategy_for_task(req.task_type, req.strategy)
+    # Persist to SQLite
+    from datetime import datetime, timezone
+    from ..db.database import get_db
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    db.conn.execute(
+        "INSERT OR REPLACE INTO merge_strategies (task_type, strategy, updated_at) VALUES (?, ?, ?)",
+        (req.task_type, req.strategy, now),
+    )
+    db.conn.commit()
     return {"success": True, "task_type": req.task_type, "strategy": req.strategy}
 
 
 @router.post("/test")
 async def test_merge(req: MergeTestRequest):
     merger = get_model_merger()
+    status = merger.get_status()
+    if not status["enabled"]:
+        return {
+            "success": False,
+            "error": "Model merging is disabled. Enable it in config to use merging.",
+            "hint": "Merging combines outputs from multiple registered models. Currently no models are registered.",
+        }
+    if status["total_models"] == 0:
+        return {
+            "success": False,
+            "error": "No models registered for merging.",
+            "hint": f"Register models with specializations: {list(TASK_TO_MODELS.keys())}",
+        }
     try:
         callback = merger.merge_for_task(req.task_type, req.query)
         if not callback:
-            return {"success": False, "error": "No merge callback available. Enable merging and register models."}
+            return {"success": False, "error": f"No merge callback available for task type '{req.task_type}'."}
         result = callback(req.query)
         return {"success": True, "result": result}
     except Exception as e:

@@ -73,14 +73,17 @@ export const HarnessManagerPanel: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="w-6 h-6 text-zinc-400 animate-spin" />
+      <div className="flex h-full flex-col p-4">
+        <div className="flex items-center justify-center h-64">
+          <RefreshCw className="w-6 h-6 text-zinc-400 animate-spin" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col p-4">
+    <div className="flex flex-col flex-1 min-h-0 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -127,7 +130,7 @@ export const HarnessManagerPanel: React.FC = () => {
       )}
 
       {/* Harness List */}
-      <div className="space-y-3">
+      <div className="flex-1 overflow-y-auto space-y-3">
         <h3 className="text-sm font-medium text-zinc-400">Installed Harnesses</h3>
         
         {harnesses.length === 0 ? (
@@ -286,6 +289,7 @@ export const HarnessManagerPanel: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
     </div>
   );
 };

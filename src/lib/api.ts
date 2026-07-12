@@ -182,6 +182,8 @@ export async function streamPhaosChat(
           baseUrl: provider.baseUrl,
           apiKey: provider.apiKey,
           model: provider.model,
+          label: provider.label,
+          sessionId: sessionStorage.getItem("oc_session_id") || crypto.randomUUID().slice(0, 12),
         },
         system_prompt: systemPrompt || undefined,
       }),

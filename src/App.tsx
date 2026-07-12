@@ -9,7 +9,7 @@ import { GitPanel } from "@/components/git/GitPanel";
 import { ToDoPanel } from "@/components/todo/ToDoPanel";
 import { SkillsLibraryPanel } from "@/components/skills/SkillsLibraryPanel";
 import { CronPanel } from "@/components/cron/CronPanel";
-import { TaskQueuePanel } from "@/components/task-queue/TaskQueuePanel";
+import { TasksPanel } from "@/components/task-queue/TasksPanel";
 import { AuditLogPanel } from "@/components/audit-log/AuditLogPanel";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { SubagentManagerPanel } from "@/components/settings/SubagentManagerPanel";
@@ -22,7 +22,6 @@ import { PerformancePanel } from "@/components/settings/PerformancePanel";
 import { RoutingPanel } from "@/components/settings/RoutingPanel";
 import { MergeStrategyPanel } from "@/components/settings/MergeStrategyPanel";
 import { ShortcutsPanel } from "@/components/settings/ShortcutsPanel";
-import { BackgroundTaskPanel } from "@/components/background/BackgroundTaskPanel";
 import { HarnessManagerPanel } from "@/components/settings/HarnessManagerPanel";
 import { SystemPromptEditor } from "@/components/settings/SystemPromptEditor";
 import { getValue, setValue } from "@/lib/storage";
@@ -46,7 +45,13 @@ export default function App() {
   const [ready, setReady] = React.useState(false);
   const [projectRoot, setProjectRoot] = React.useState("/OpenComputer");
   const [systemPrompt, setSystemPrompt] = React.useState(DEFAULT_SYSTEM_PROMPT);
-  const [sessionId] = React.useState(() => crypto.randomUUID());
+  const [sessionId] = React.useState(() => {
+    const stored = sessionStorage.getItem("oc_session_id");
+    if (stored) return stored;
+    const id = crypto.randomUUID().slice(0, 12);
+    sessionStorage.setItem("oc_session_id", id);
+    return id;
+  });
 
   React.useEffect(() => {
     (async () => {
@@ -173,7 +178,7 @@ export default function App() {
                 {view === "todo" && <ToDoPanel />}
                 {view === "skills" && <SkillsLibraryPanel />}
                 {view === "cron" && <CronPanel />}
-                {view === "queue" && <TaskQueuePanel />}
+                {view === "queue" && <TasksPanel sessionId={sessionId} />}
                 {view === "audit" && <AuditLogPanel />}
                 {view === "memory" && <MemoryPanel />}
                 {view === "subagents" && <SubagentManagerPanel />}
@@ -186,9 +191,6 @@ export default function App() {
                 {view === "routing" && <RoutingPanel />}
                 {view === "merging" && <MergeStrategyPanel />}
                 {view === "shortcuts" && <ShortcutsPanel />}
-                {view === "background" && (
-                  <BackgroundTaskPanel sessionId={sessionId} />
-                )}
                 {view === "harness" && <HarnessManagerPanel />}
                 {view === "prompt" && (
                   <SystemPromptEditor
