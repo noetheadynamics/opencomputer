@@ -104,7 +104,9 @@ export function ChatView({
   onRemoveConversation,
   onSelectConversation,
 }: ChatViewProps) {
-  const [messages, setMessages] = React.useState<UIMessage[]>([]);
+  const [messages, setMessages] = React.useState<UIMessage[]>(() =>
+    activeConvId ? chatCache.get(activeConvId) ?? [] : []
+  );
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -736,8 +738,7 @@ export function ChatView({
                         ) : (
                           msg.content || (msg.streaming ? "" : "")
                         )}
-                        {msg.streaming && !msg.content && <TypingIndicator />}
-                        {msg.streaming && msg.content && (
+                        {msg.streaming && display && (
                           <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-oc-accent align-middle" />
                         )}
                         {msg.isEdited && (
