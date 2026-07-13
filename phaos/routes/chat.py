@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -118,6 +119,7 @@ async def _stream_chat(req: ChatRequest):
         start = time.time()
 
         # Call LLM with tools
+        known_tools = {t.get("function", {}).get("name") for t in (tools or [])}
         payload = {
             "model": model,
             "messages": messages,
@@ -209,6 +211,32 @@ async def _stream_chat(req: ChatRequest):
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
+
+        # Legacy function-call support: some models (often local ones) emit tool
+        # calls as plain text, e.g. `function=think>{"thought": "..."}`, instead of
+        # using the native tool_calls field with finish_reason "tool_calls". Detect
+        # that syntax, execute it as a real tool call, and keep the agent loop going
+        # so the model still produces a final answer instead of stopping cold.
+        if not tool_calls_buffer:
+            legacy_match = re.search(
+                r'function=([A-Za-z0-9_]+)\s*>\s*(\{.*\})', content_buffer, re.DOTALL
+            )
+            if legacy_match and legacy_match.group(1) in known_tools:
+                fn_name = legacy_match.group(1)
+                try:
+                    fn_args = json.loads(legacy_match.group(2))
+                except json.JSONDecodeError:
+                    fn_args = {}
+                tool_calls_buffer[0] = {
+                    "id": f"legacy-{fn_name}",
+                    "type": "function",
+                    "function": {"name": fn_name, "arguments": json.dumps(fn_args)},
+                }
+                # Strip the function-call text, keeping any real prose around it
+                content_buffer = (
+                    content_buffer[:legacy_match.start()]
+                    + content_buffer[legacy_match.end():]
+                ).strip()
 
         # If no tool calls, we're done
         if not tool_calls_buffer:
