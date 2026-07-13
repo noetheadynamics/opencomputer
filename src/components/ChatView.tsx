@@ -24,6 +24,7 @@ import type { ChatAttachment, ChatReaction, CommandItem } from "@/types/chat";
 import { DEFAULT_SYSTEM_PROMPT } from "@/types/conversation";
 import { useConversations } from "../hooks/useConversations";
 import { useMessages } from "../hooks/useMessages";
+import { chatCache } from "@/lib/chatCache";
 import { ReactionPicker } from "./chat/ReactionPicker";
 import { ReplyIndicator } from "./chat/ReplyIndicator";
 import { MessageEditor } from "./chat/MessageEditor";
@@ -43,7 +44,7 @@ interface ChatViewProps {
   systemPrompt?: string;
 }
 
-interface UIMessage {
+export interface UIMessage {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string;
@@ -125,6 +126,13 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   React.useEffect(() => {
     if (activeConvId) {
       loadingConvIdRef.current = activeConvId;
+      // Restore instantly from cache — no network refetch, no flash.
+      const cached = chatCache.get(activeConvId);
+      if (cached) {
+        setMessages(cached.map((m) => ({ ...m, streaming: false })));
+        return;
+      }
+      // Cache miss: fetch from backend and populate the cache.
       const snapshotLen = messages.length;
       loadMessages(activeConvId).then((msgs) => {
         // Only apply if we haven't switched to a different conversation
@@ -132,13 +140,15 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         // If processMessage has added messages since load started, don't overwrite them
         setMessages((current) => {
           if (current.length > snapshotLen) return current;
-          return msgs.map((m) => ({
+          const mapped = msgs.map((m) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
             timestamp: new Date(m.created_at).getTime(),
             saved: true,
           }));
+          chatCache.set(activeConvId, mapped);
+          return mapped;
         });
       });
     } else {
@@ -153,9 +163,11 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     });
   }, [messages]);
 
-  // Keep messagesRef in sync so processMessage can read current messages without depending on state
+  // Keep messagesRef in sync so processMessage can read current messages without depending on state.
+  // Also mirror into the session cache so navigating away and back restores instantly.
   React.useEffect(() => {
     messagesRef.current = messages;
+    if (activeConvId) chatCache.set(activeConvId, messages);
   }, [messages]);
 
   React.useEffect(() => {
@@ -326,6 +338,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   }
 
   async function handleDeleteConversation(convId: string) {
+    chatCache.delete(convId);
     await removeConversation(convId);
     if (activeConvId === convId) {
       setMessages([]);

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "@/App";
+import { chatCache } from "@/lib/chatCache";
 
 function sseStream(chunks: string[]) {
   const enc = new TextEncoder();
@@ -126,6 +127,7 @@ function mockChatFullLifecycle() {
 describe("OpenComputer Phase 1 UI", () => {
   beforeEach(() => {
     localStorage.clear();
+    chatCache.clear();
     vi.restoreAllMocks();
   });
 
