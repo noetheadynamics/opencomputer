@@ -241,7 +241,7 @@ async def _stream_chat(req: ChatRequest):
             result_dict = {"success": result.success, "output": result.output, "error": result.error}
 
             # If tool requires approval, yield that and skip
-            if result_dict.get("output", {}).get("status") == "approval_required":
+            if (result_dict.get("output") or {}).get("status") == "approval_required":
                 yield f"data: {json.dumps({'approval_required': result_dict['output']})}\n\n"
                 result_str = "Tool execution requires user approval. Skipping."
                 tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})
