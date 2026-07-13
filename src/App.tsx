@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Sidebar, type ViewKey } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ChatView } from "@/components/ChatView";
+import { useConversations } from "@/hooks/useConversations";
 import { FileSystemPanel } from "@/components/file-system/FileSystemPanel";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import { GitPanel } from "@/components/git/GitPanel";
@@ -45,6 +46,7 @@ export default function App() {
   const [ready, setReady] = React.useState(false);
   const [projectRoot, setProjectRoot] = React.useState("/OpenComputer");
   const [systemPrompt, setSystemPrompt] = React.useState(DEFAULT_SYSTEM_PROMPT);
+  const conversationsApi = useConversations();
   const [sessionId] = React.useState(() => {
     const stored = sessionStorage.getItem("oc_session_id");
     if (stored) return stored;
@@ -165,6 +167,11 @@ export default function App() {
                     provider={activeProvider}
                     onOpenSettings={() => setSettingsOpen(true)}
                     systemPrompt={systemPrompt}
+                    conversations={conversationsApi.conversations}
+                    activeConvId={conversationsApi.activeId}
+                    onCreateConversation={conversationsApi.create}
+                    onRemoveConversation={conversationsApi.remove}
+                    onSelectConversation={conversationsApi.setActiveId}
                   />
                 )}
                 {view === "files" && (

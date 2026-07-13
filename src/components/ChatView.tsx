@@ -22,7 +22,7 @@ import type { Provider } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 import type { ChatAttachment, ChatReaction, CommandItem } from "@/types/chat";
 import { DEFAULT_SYSTEM_PROMPT } from "@/types/conversation";
-import { useConversations } from "../hooks/useConversations";
+import type { Conversation } from "@/types/conversation";
 import { useMessages } from "../hooks/useMessages";
 import { chatCache } from "@/lib/chatCache";
 import { ReactionPicker } from "./chat/ReactionPicker";
@@ -42,6 +42,11 @@ interface ChatViewProps {
   provider: Provider | null;
   onOpenSettings: () => void;
   systemPrompt?: string;
+  conversations: Conversation[];
+  activeConvId: string | null;
+  onCreateConversation: (title?: string) => Promise<Conversation>;
+  onRemoveConversation: (id: string) => Promise<void>;
+  onSelectConversation: (id: string) => void;
 }
 
 export interface UIMessage {
@@ -68,6 +73,13 @@ function extractUrls(text: string): string[] {
   return text.match(urlRegex) ?? [];
 }
 
+// Some models (typically local ones without native tool_calls support) emit the
+// legacy function-calling syntax as plain text, e.g. `function=think>{"thought": "..."}`.
+// This is internal reasoning, not user-facing content, so strip it from display.
+function stripLegacyToolCalls(text: string): string {
+  return text.replace(/function=[A-Za-z0-9_]+\s*>\s*\{[\s\S]*?\}/g, "").trim();
+}
+
 const glassSpring = {
   type: "spring" as const,
   stiffness: 500,
@@ -82,7 +94,16 @@ const tapSpring = {
   mass: 0.4,
 };
 
-export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewProps) {
+export function ChatView({
+  provider,
+  onOpenSettings,
+  systemPrompt,
+  conversations,
+  activeConvId,
+  onCreateConversation,
+  onRemoveConversation,
+  onSelectConversation,
+}: ChatViewProps) {
   const [messages, setMessages] = React.useState<UIMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -96,14 +117,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   const messagesRef = React.useRef<UIMessage[]>([]);
   const [queueLength, setQueueLength] = React.useState(0);
 
-  // Conversation persistence
-  const {
-    conversations,
-    activeId: activeConvId,
-    create: createConversation,
-    remove: removeConversation,
-    setActiveId: setActiveConvId,
-  } = useConversations();
+  // Conversation persistence (state lifted to App so it survives view switches)
   const {
     load: loadMessages,
     addMessage: saveMessage,
@@ -327,19 +341,19 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
   }
 
   async function handleNewChat() {
-    await createConversation("New Chat");
+    await onCreateConversation("New Chat");
     setMessages([]);
     setInput("");
   }
 
   async function handleSelectConversation(convId: string) {
-    setActiveConvId(convId);
+    onSelectConversation(convId);
     setShowSidebar(false);
   }
 
   async function handleDeleteConversation(convId: string) {
     chatCache.delete(convId);
-    await removeConversation(convId);
+    await onRemoveConversation(convId);
     if (activeConvId === convId) {
       setMessages([]);
     }
@@ -465,7 +479,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
     let convId = activeConvId;
     if (!convId) {
       try {
-        const conv = await createConversation(text.slice(0, 50));
+        const conv = await onCreateConversation(text.slice(0, 50));
         convId = conv.id;
       } catch (err) {
         console.error("Failed to create conversation:", err);
@@ -486,7 +500,7 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
 
     setAttachments([]);
     await processMessage(text, convId, currentAttachments, currentReplyTo);
-  }, [input, provider, busy, activeConvId, attachments, replyTo, createConversation, processMessage]);
+  }, [input, provider, busy, activeConvId, attachments, replyTo, onCreateConversation, processMessage]);
 
   function terminate() {
     if (abortRef.current) {
@@ -617,14 +631,17 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
         )}
 
         <AnimatePresence initial={false}>
-          {messages.map((msg) => (
+          {messages.map((msg) => {
+            const display =
+              msg.role === "assistant" ? stripLegacyToolCalls(msg.content) : msg.content;
+            return (
             <motion.div
               key={msg.id}
               initial={{ opacity: 0, y: 12, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ type: "spring", stiffness: 380, damping: 30 }}
             >
-              {msg.role === "tool" && msg.toolCall ? (
+              {msg.role === "tool" && msg.toolCall && msg.toolCall.name !== "think" ? (
                 <div className="flex items-start gap-2 pl-9">
                   <div className="oc-glass-3d max-w-[80%] rounded-xl px-3 py-2 text-xs">
                     <div
@@ -709,7 +726,13 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                         )}
                       >
                         {msg.role === "assistant" ? (
-                          <MessageContent content={msg.content} />
+                          display ? (
+                            <MessageContent content={display} />
+                          ) : msg.streaming ? (
+                            <TypingIndicator />
+                          ) : (
+                            <span className="text-xs italic text-oc-text-secondary/60">thought</span>
+                          )
                         ) : (
                           msg.content || (msg.streaming ? "" : "")
                         )}
@@ -788,7 +811,8 @@ export function ChatView({ provider, onOpenSettings, systemPrompt }: ChatViewPro
                 />
               )}
             </motion.div>
-          ))}
+            );
+          })}
         </AnimatePresence>
       </div>
 
