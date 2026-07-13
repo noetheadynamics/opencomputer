@@ -236,17 +236,18 @@ async def _stream_chat(req: ChatRequest):
             # Notify frontend about tool call
             yield f"data: {json.dumps({'tool_call': {'id': tc['id'], 'name': fn_name, 'args': fn_args}})}\n\n"
 
-            # Execute
-            result = executor.registry.execute(fn_name, fn_args)
-            result_dict = {"success": result.success, "output": result.output, "error": result.error}
+            # Execute via execute_tool_call, which enforces the approval gate
+            exec_result = executor.execute_tool_call({"name": fn_name, "args": fn_args})
 
             # If tool requires approval, yield that and skip
-            if (result_dict.get("output") or {}).get("status") == "approval_required":
-                yield f"data: {json.dumps({'approval_required': result_dict['output']})}\n\n"
+            if isinstance(exec_result, dict) and exec_result.get("status") == "approval_required":
+                yield f"data: {json.dumps({'approval_required': exec_result})}\n\n"
                 result_str = "Tool execution requires user approval. Skipping."
                 tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})
                 yield f"data: {json.dumps({'tool_result': {'id': tc['id'], 'name': fn_name, 'result': result_str}})}\n\n"
                 continue
+
+            result_dict = exec_result
 
             result_str = _format_tool_result(result_dict)
             tool_results.append({"tool_call_id": tc["id"], "role": "tool", "content": result_str})
