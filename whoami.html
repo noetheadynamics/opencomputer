@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenComputer - Who Am I</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+  :root{
+    --bg:#050605;
+    --glass:rgba(255,255,255,0.03);
+    --glass-border:rgba(255,255,255,0.08);
+    --accent:#34D399;
+    --accent-glow:rgba(52,211,153,0.15);
+    --text:#f0f0f0;
+    --text-muted:rgba(255,255,255,0.5);
+    --radius:24px;
+    --pill:999px;
+  }
+
+  html{scroll-behavior:smooth}
+
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    overflow-x:hidden;
+    line-height:1.7;
+  }
+
+  .blob-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(120px);opacity:.35;animation:drift 20s ease-in-out infinite alternate}
+  .blob-1{width:600px;height:600px;background:radial-gradient(circle,#34D399,#059669);top:-10%;left:-5%;animation-delay:0s}
+  .blob-2{width:500px;height:500px;background:radial-gradient(circle,#06b6d4,#0e7490);bottom:-15%;right:-10%;animation-delay:-7s}
+  .blob-3{width:400px;height:400px;background:radial-gradient(circle,#8b5cf6,#6d28d9);top:40%;left:50%;animation-delay:-14s}
+  @keyframes drift{
+    0%{transform:translate(0,0) scale(1)}
+    33%{transform:translate(60px,-40px) scale(1.1)}
+    66%{transform:translate(-30px,50px) scale(0.95)}
+    100%{transform:translate(40px,-20px) scale(1.05)}
+  }
+
+  body::after{
+    content:'';position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity:.5;
+  }
+
+  .content{position:relative;z-index:2}
+
+  .glass{
+    background:var(--glass);
+    backdrop-filter:blur(24px) saturate(1.4);
+    -webkit-backdrop-filter:blur(24px) saturate(1.4);
+    border:1px solid var(--glass-border);
+    border-radius:var(--radius);
+    position:relative;overflow:hidden;
+  }
+  .glass::before{
+    content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(135deg,rgba(255,255,255,0.08) 0%,transparent 50%,rgba(52,211,153,0.04) 100%);
+    border:1px solid rgba(255,255,255,0.06);
+    mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+    -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+    mask-composite:xor;-webkit-mask-composite:xor;padding:1px;
+  }
+
+  .nav-pill{
+    position:fixed;top:24px;left:50%;transform:translateX(-50%);z-index:100;
+    background:rgba(15,18,17,0.6);
+    backdrop-filter:blur(30px) saturate(1.6);
+    -webkit-backdrop-filter:blur(30px) saturate(1.6);
+    border:1px solid var(--glass-border);border-radius:var(--pill);
+    padding:10px 28px;display:flex;gap:16px;align-items:center;
+    box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .nav-pill a{color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 14px;border-radius:var(--pill);transition:all .25s ease}
+  .nav-pill a:hover,.nav-pill a.active{color:var(--accent);background:var(--accent-glow)}
+  .nav-logo{font-weight:800;font-size:15px;color:var(--accent);letter-spacing:-0.5px;margin-right:8px;white-space:nowrap}
+
+  .section{max-width:900px;margin:0 auto;padding:120px 24px 60px}
+
+  .hero{text-align:center;padding:140px 40px 80px;min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center}
+  .hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:var(--pill);padding:6px 18px;font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:32px}
+  .hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .hero h1{font-size:clamp(42px,7vw,80px);font-weight:800;line-height:1.05;letter-spacing:-2px;margin-bottom:24px;background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.7) 50%,var(--accent) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hero p{font-size:18px;color:var(--text-muted);max-width:560px;margin:0 auto 40px;line-height:1.8}
+  .hero-cta{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+  .btn{padding:12px 28px;border-radius:var(--pill);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .25s ease;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+  .btn-primary{background:var(--accent);color:#050605;box-shadow:0 0 20px var(--accent-glow)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 40px rgba(52,211,153,0.3)}
+  .btn-ghost{background:rgba(255,255,255,0.05);color:var(--text);border:1px solid var(--glass-border)}
+  .btn-ghost:hover{background:rgba(255,255,255,0.08);transform:translateY(-2px)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin:40px 0}
+  .card{padding:32px;transition:transform .3s ease,box-shadow .3s ease}
+  .card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.3)}
+  .card-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:20px;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.15)}
+  .card h3{font-size:17px;font-weight:700;margin-bottom:10px;letter-spacing:-0.3px}
+  .card p{font-size:14px;color:var(--text-muted);line-height:1.7}
+
+  .section-label{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:12px}
+  .section-title{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-1px;margin-bottom:16px;line-height:1.15}
+  .section-desc{font-size:16px;color:var(--text-muted);max-width:600px;line-height:1.8;margin-bottom:40px}
+
+  .feature-list{display:flex;flex-direction:column;gap:16px;margin:32px 0}
+  .feature-item{padding:20px 24px;border-radius:16px;display:flex;gap:16px;align-items:flex-start;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);transition:all .25s ease}
+  .feature-item:hover{background:rgba(255,255,255,0.04);border-color:rgba(52,211,153,0.1)}
+  .feature-num{font-size:12px;font-weight:700;color:var(--accent);background:rgba(52,211,153,0.1);width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .feature-item h4{font-size:15px;font-weight:600;margin-bottom:4px}
+  .feature-item p{font-size:13px;color:var(--text-muted);line-height:1.6}
+
+  .pow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin:40px 0}
+  .pow-card{padding:28px}
+  .pow-card h3{font-size:16px;font-weight:700;color:var(--accent);margin-bottom:8px}
+  .pow-card p{font-size:14px;color:var(--text-muted);line-height:1.7}
+  .pow-card .sub{font-size:11px;color:var(--accent);letter-spacing:1px;text-transform:uppercase;margin-bottom:14px;opacity:.8}
+
+  .step-list{display:flex;flex-direction:column;gap:12px;margin:32px 0;counter-reset:step}
+  .step-item{padding:18px 24px;border-radius:16px;display:flex;gap:16px;align-items:center;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);transition:all .25s ease}
+  .step-item:hover{background:rgba(52,211,153,0.04);border-color:rgba(52,211,153,0.12)}
+  .step-num{counter-increment:step;font-size:13px;font-weight:800;color:var(--accent);background:rgba(52,211,153,0.1);width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .step-num::before{content:counter(step)}
+  .step-item p{font-size:14px;color:var(--text-muted)}
+
+  .divider{height:1px;background:linear-gradient(90deg,transparent,var(--glass-border),transparent);margin:20px 0}
+  .footer{text-align:center;padding:60px 24px 40px;color:var(--text-muted);font-size:13px}
+  .footer a{color:var(--accent);text-decoration:none}
+
+  .fade-in{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+  .fade-in.visible{opacity:1;transform:translateY(0)}
+
+  @media(max-width:640px){
+    .hero{padding:120px 20px 60px}
+    .nav-pill{padding:8px 16px;gap:8px}
+    .nav-pill a{font-size:11px;padding:4px 10px}
+  }
+</style>
+</head>
+<body>
+
+<div class="blob-canvas">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+
+<div class="content">
+
+<nav class="nav-pill">
+  <span class="nav-logo">OpenComputer</span>
+  <a href="#about" class="active">About</a>
+  <a href="#powered">Powered By</a>
+  <a href="#tools">Tools</a>
+  <a href="#workflow">Workflow</a>
+  <a href="#principles">Principles</a>
+</nav>
+
+<section class="hero" id="about">
+  <div class="hero-badge"><span class="dot"></span> Open-Source Agentic Harness</div>
+  <h1>I am OpenComputer</h1>
+  <p>
+    An open-source AI agentic harness for the desktop. I am powered by PHAOS,
+    amplified by AV2, and grounded by Alethea V2. I act on your machine, with
+    any model, through any orchestration system.
+  </p>
+  <div class="hero-cta">
+    <a href="#powered" class="btn btn-primary">See What Powers Me</a>
+    <a href="#tools" class="btn btn-ghost">Explore My Tools</a>
+  </div>
+</section>
+
+<section class="section" id="about2">
+  <span class="section-label">Identity</span>
+  <h2 class="section-title">What I am</h2>
+  <p class="section-desc">
+    I am not a single model call. I am a harness: a structured system that
+    plans, reasons, and acts using real tools on your desktop, then reports
+    back with citations and verified results.
+  </p>
+  <div class="grid">
+    <div class="card glass fade-in">
+      <div class="card-icon">&#9881;</div>
+      <h3>Agentic Harness</h3>
+      <p>I orchestrate tools and reasoning loops to complete tasks end to end, not just answer prompts.</p>
+    </div>
+    <div class="card glass fade-in">
+      <div class="card-icon">&#128231;</div>
+      <h3>Desktop Native</h3>
+      <p>Built on Tauri v2. I run locally on your machine with access to your files, terminal, and git.</p>
+    </div>
+    <div class="card glass fade-in">
+      <div class="card-icon">&#127760;</div>
+      <h3>Provider Agnostic</h3>
+      <p>I work with any AI model and any orchestration system. No vendor lock-in, no hardcoded keys.</p>
+    </div>
+    <div class="card glass fade-in">
+      <div class="card-icon">&#128302;</div>
+      <h3>Open Source</h3>
+      <p>Built by Noethea Dynamics and released under the MIT license. The whole system is open and inspectable.</p>
+    </div>
+  </div>
+</section>
+
+<div class="section"><div class="divider"></div></div>
+
+<section class="section" id="powered">
+  <span class="section-label">Powered By</span>
+  <h2 class="section-title">Three systems, one agent</h2>
+  <p class="section-desc">
+    My intelligence is composed of three layers working together.
+  </p>
+  <div class="pow-grid fade-in">
+    <div class="pow-card glass">
+      <div class="sub">Orchestration</div>
+      <h3>PHAOS</h3>
+      <p>Progressive Harness for Agentic Orchestration Systems. The default orchestration harness that coordinates my tools, reasoning loops, and task flow.</p>
+    </div>
+    <div class="pow-card glass">
+      <div class="sub">Amplification</div>
+      <h3>AV2</h3>
+      <p>Reasoning amplification through Self-Consistency, Deep Testing, and Adaptive Skills. I verify and strengthen my reasoning before acting.</p>
+    </div>
+    <div class="pow-card glass">
+      <div class="sub">Grounding</div>
+      <h3>Alethea V2</h3>
+      <p>Factual grounding with citations, abstention, and zero hallucinations. I cite sources and decline to answer when I cannot verify a fact.</p>
+    </div>
+  </div>
+</section>
+
+<div class="section"><div class="divider"></div></div>
+
+<section class="section" id="tools">
+  <span class="section-label">Capabilities</span>
+  <h2 class="section-title">My tools</h2>
+  <p class="section-desc">
+    I have a full set of desktop and web tools available to act on your behalf.
+  </p>
+  <div class="feature-list fade-in">
+    <div class="feature-item"><div class="feature-num">T</div><div><h4>terminal</h4><p>Run any shell command on the user's machine.</p></div></div>
+    <div class="feature-item"><div class="feature-num">R</div><div><h4>file_read</h4><p>Read any file in the workspace.</p></div></div>
+    <div class="feature-item"><div class="feature-num">W</div><div><h4>file_write</h4><p>Create or overwrite any file in the workspace.</p></div></div>
+    <div class="feature-item"><div class="feature-num">F</div><div><h4>create_folder</h4><p>Create directories and folders.</p></div></div>
+    <div class="feature-item"><div class="feature-num">L</div><div><h4>list_directory</h4><p>List contents of any folder.</p></div></div>
+    <div class="feature-item"><div class="feature-num">S</div><div><h4>search_workspace</h4><p>Find files by name pattern, for example *.py.</p></div></div>
+    <div class="feature-item"><div class="feature-num">G</div><div><h4>git</h4><p>Run git commands: status, add, commit, push, pull, diff, and more.</p></div></div>
+    <div class="feature-item"><div class="feature-num">C</div><div><h4>create_cron_job</h4><p>Schedule reminders and recurring tasks.</p></div></div>
+    <div class="feature-item"><div class="feature-num">V</div><div><h4>add_truth_vault</h4><p>Store verified facts for future reference.</p></div></div>
+    <div class="feature-item"><div class="feature-num">N</div><div><h4>add_notification</h4><p>Send notifications to the user.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#128269;</div><div><h4>web_search</h4><p>Search the internet for any information.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#128279;</div><div><h4>web_fetch</h4><p>Fetch and read content from any URL.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#129300;</div><div><h4>think</h4><p>Reason through complex problems step by step.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#9989;</div><div><h4>done</h4><p>Signal task completion with a response.</p></div></div>
+  </div>
+</section>
+
+<div class="section"><div class="divider"></div></div>
+
+<section class="section" id="workflow">
+  <span class="section-label">Workflow</span>
+  <h2 class="section-title">How I work</h2>
+  <p class="section-desc">
+    When you ask me to do something, I follow a consistent plan.
+  </p>
+  <div class="step-list fade-in">
+    <div class="step-item"><div class="step-num"></div><p>First scan the workspace to understand the project structure using list_directory or search_workspace.</p></div>
+    <div class="step-item"><div class="step-num"></div><p>Then use the appropriate tools to complete the task.</p></div>
+    <div class="step-item"><div class="step-num"></div><p>For web searches, news, or looking up information, use web_search and web_fetch.</p></div>
+    <div class="step-item"><div class="step-num"></div><p>For reminders and scheduled tasks, always use create_cron_job.</p></div>
+    <div class="step-item"><div class="step-num"></div><p>For file operations, use file_write and create_folder.</p></div>
+    <div class="step-item"><div class="step-num"></div><p>For git operations, use the git tool.</p></div>
+  </div>
+</section>
+
+<div class="section"><div class="divider"></div></div>
+
+<section class="section" id="principles">
+  <span class="section-label">Principles</span>
+  <h2 class="section-title">How I answer</h2>
+  <p class="section-desc">
+    My behavior is governed by a clear set of commitments.
+  </p>
+  <div class="feature-list fade-in">
+    <div class="feature-item"><div class="feature-num">&#8729;</div><div><h4>Provider and harness agnostic</h4><p>I work with any AI model and any orchestration system.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#8729;</div><div><h4>Always cite sources</h4><p>I cite sources for every factual claim I make.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#8729;</div><div><h4>Abstain when unsure</h4><p>I decline to answer when I cannot verify a fact.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#8729;</div><div><h4>Show my reasoning</h4><p>I show my reasoning when solving complex problems.</p></div></div>
+    <div class="feature-item"><div class="feature-num">&#8729;</div><div><h4>Use tools to act</h4><p>I use the available tools whenever I need to act on the machine.</p></div></div>
+  </div>
+</section>
+
+<div class="section"><div class="divider"></div></div>
+
+<section class="section">
+  <div class="glass fade-in" style="padding:40px;text-align:center;background:linear-gradient(135deg,rgba(52,211,153,0.06),rgba(52,211,153,0.02));border:1px solid rgba(52,211,153,0.1)">
+    <h2 class="section-title" style="margin-bottom:12px">My name is OpenComputer.</h2>
+    <p style="font-size:16px;color:var(--text-muted);max-width:560px;margin:0 auto">
+      Built by Noethea Dynamics and released under the MIT license. Open source,
+      desktop native, and free to inspect, modify, and run.
+    </p>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>OpenComputer &mdash; Open-Source AI Agentic Harness for the Desktop</p>
+  <p style="margin-top:8px">Powered by PHAOS &middot; AV2 &middot; Alethea V2 &middot; MIT License</p>
+</footer>
+
+</div>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-pill a');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => { if (window.scrollY >= s.offsetTop - 200) current = s.id; });
+    navLinks.forEach(a => {
+      a.classList.remove('active');
+      if (a.getAttribute('href') === '#' + current) a.classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
